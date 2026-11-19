@@ -71,3 +71,29 @@ export function removeTriangles(p: Float32Array, indices: number[]): Float32Arra
 export function makeTShape(): Float32Array {
   return concat(makeBox(10, 10, 20, [10, 0, 0]), makeBox(30, 10, 5, [0, 0, 20]))
 }
+
+/** Binary STL: 80-byte header, uint32 count, 50 bytes per triangle. */
+export function toBinaryStl(p: Float32Array, header = 'binary test stl'): ArrayBuffer {
+  const n = p.length / 9
+  const buf = new ArrayBuffer(84 + n * 50)
+  const view = new DataView(buf)
+  const bytes = new TextEncoder().encode(header.slice(0, 80))
+  new Uint8Array(buf, 0, bytes.length).set(bytes)
+  view.setUint32(80, n, true)
+  for (let t = 0; t < n; t++) {
+    const off = 84 + t * 50 + 12 // skip normal (left as 0,0,0)
+    for (let k = 0; k < 9; k++) view.setFloat32(off + k * 4, p[t * 9 + k], true)
+  }
+  return buf
+}
+
+export function toAsciiStl(p: Float32Array): ArrayBuffer {
+  const lines = ['solid test']
+  for (let t = 0; t < p.length; t += 9) {
+    lines.push('  facet normal 0 0 0', '    outer loop')
+    for (let k = 0; k < 9; k += 3) lines.push(`      vertex ${p[t + k]} ${p[t + k + 1]} ${p[t + k + 2]}`)
+    lines.push('    endloop', '  endfacet')
+  }
+  lines.push('endsolid test')
+  return new TextEncoder().encode(lines.join('\n')).buffer as ArrayBuffer
+}
