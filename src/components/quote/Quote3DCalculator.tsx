@@ -7,6 +7,7 @@ import { computeQuoteState } from '../../utils/quoteState'
 import { shouldSuggestSupport, type PrintSettings } from '../../utils/slicerEstimator'
 import { DropZone } from './DropZone'
 import { OptionsPanel } from './OptionsPanel'
+import { OrderForm } from './OrderForm'
 import { QuoteResult } from './QuoteResult'
 import { StlViewer, type StlViewerHandle } from './StlViewer'
 
@@ -123,9 +124,13 @@ export function Quote3DCalculator() {
         <OptionsPanel value={settings} onChange={setSettings} supportReason={supportReason} />
         <QuoteResult quote={quote} stats={stats} onSubmit={() => setShowOrder(true)} />
         {showOrder && loaded && quote && (
-          <div data-order-placeholder className="text-sm text-slate-500">
-            {/* OrderForm được gắn ở Task 9 */}
-          </div>
+          <OrderForm
+            quote={quote}
+            stats={loaded.stats}
+            settings={settings}
+            file={loaded.file}
+            onClose={() => setShowOrder(false)}
+          />
         )}
       </div>
     </section>
