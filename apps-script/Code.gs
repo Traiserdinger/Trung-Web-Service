@@ -118,12 +118,9 @@ function countRate_(phone) {
 }
 
 function alreadyReceived_(rootId, orderCode) {
-  if (CacheService.getScriptCache().get('done_' + orderCode)) return true;
-  try {
-    return DriveApp.getFolderById(rootId).getFoldersByName(orderCode).hasNext();
-  } catch (err) {
-    return false;
-  }
+  // Chỉ tin cờ đặt SAU khi lưu xong STL + order.json. Không dò theo tên thư mục:
+  // thư mục dở dang (Drive lỗi giữa chừng) từng khiến lần gửi lại bị báo "đã nhận" mà mất file.
+  return Boolean(CacheService.getScriptCache().get('done_' + orderCode));
 }
 
 function markReceived_(orderCode) {
