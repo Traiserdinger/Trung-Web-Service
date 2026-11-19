@@ -36,7 +36,7 @@ export const materials: Record<MaterialId, MaterialConfig> = {
     label: 'PLA',
     density: 1.24,
     pricePerGram: 450, // tạm, chỉnh sau
-    color: '#f8fafc',
+    color: '#eef0ee',
     contactOnly: false,
     flowRate: { 0.12: 9, 0.16: 12, 0.2: 15, 0.28: 18 },
   },
@@ -60,7 +60,7 @@ export const materials: Record<MaterialId, MaterialConfig> = {
   },
   ABS: {
     id: 'ABS',
-    label: 'ABS – liên hệ',
+    label: 'ABS',
     density: 1.04,
     pricePerGram: null,
     color: '#fb923c',

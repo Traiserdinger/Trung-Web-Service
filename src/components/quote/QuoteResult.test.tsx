@@ -33,8 +33,9 @@ const quote: QuoteState = {
 describe('QuoteResult', () => {
   it('shows the estimate, price range and the print button for a quote', () => {
     render(<QuoteResult quote={quote} stats={stats} onSubmit={vi.fn()} />)
-    expect(screen.getByText(/Tạm tính: 32\.000đ/)).toBeInTheDocument()
-    expect(screen.getByText(/khoảng 26\.000đ – 39\.000đ/)).toBeInTheDocument()
+    expect(screen.getByText('Tạm tính')).toBeInTheDocument()
+    expect(screen.getByText('32.000đ')).toBeInTheDocument()
+    expect(screen.getByText(/26\.000đ – 39\.000đ/)).toBeInTheDocument()
     expect(screen.getByText(/1 giờ 05 phút/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Gửi yêu cầu in' })).toBeInTheDocument()
   })

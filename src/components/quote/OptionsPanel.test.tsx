@@ -37,7 +37,7 @@ describe('OptionsPanel', () => {
 
   it('labels ABS as contact-only and shows the support reason', () => {
     render(<OptionsPanel value={base} onChange={vi.fn()} supportReason="Phát hiện ~3.0 cm² mặt treo" />)
-    expect(screen.getByRole('button', { name: /ABS – liên hệ/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /ABS.*Liên hệ/ })).toBeInTheDocument()
     expect(screen.getByText('Phát hiện ~3.0 cm² mặt treo')).toBeInTheDocument()
   })
 })

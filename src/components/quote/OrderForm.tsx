@@ -1,9 +1,8 @@
-import { useCallback, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { contactConfig } from '../../config/contactConfig'
 import { fileLimits } from '../../config/pricingConfig'
 import { fileToBase64, OrderSubmitError, submitOrder as defaultSubmit } from '../../lib/submitOrder'
 import type { MeshStats } from '../../utils/meshAnalysis'
-import { generateOrderCode } from '../../utils/orderCode'
 import {
   buildOrderPayload,
   canUpload,
@@ -13,48 +12,66 @@ import {
 } from '../../utils/orderPayload'
 import type { QuoteState } from '../../utils/quoteState'
 import type { PrintSettings } from '../../utils/slicerEstimator'
-import { TurnstileWidget } from './TurnstileWidget'
+import { TurnstileWidget, type TurnstileHandle } from './TurnstileWidget'
 
 interface Props {
   quote: QuoteState
   stats: MeshStats
   settings: PrintSettings
   file: File
+  /** Mã đơn do component cha giữ theo từng file, để mở lại form vẫn dùng đúng mã */
+  orderCode: string
   onClose(): void
+  /** Báo cho cha biết đang gửi, để khoá việc đổi file */
+  onBusyChange?(busy: boolean): void
+  turnstileSiteKey?: string
   submit?: typeof defaultSubmit
 }
 
-const inputCls =
-  'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none'
+type Stage = 'idle' | 'reading' | 'sending'
 
-function Field(p: { id: string; label: string; error?: string; children: ReactNode }) {
+const inputCls =
+  'w-full rounded-[12px] border border-mist bg-paper px-3.5 py-2.5 text-[15px] text-ink placeholder:text-slate/60 transition-colors focus:border-solder focus:outline-none focus:ring-4 focus:ring-solder/15'
+
+function Field(p: { id: string; label: string; hint?: string; error?: string; children: ReactNode }) {
   return (
-    <div className="space-y-1">
-      <label htmlFor={p.id} className="text-sm font-medium text-slate-700">
+    <div>
+      <label htmlFor={p.id} className="flex items-baseline justify-between text-[14px] font-semibold text-ink">
         {p.label}
+        {p.hint && <span className="text-[13px] font-normal text-slate">{p.hint}</span>}
       </label>
-      {p.children}
-      {p.error && <p className="text-xs text-red-600">{p.error}</p>}
+      <div className="mt-1.5">{p.children}</div>
+      {p.error && <p className="mt-1.5 text-[13px] text-alert">{p.error}</p>}
     </div>
   )
 }
 
-function ZaloButton({ children }: { children: ReactNode }) {
+function ZaloButton({ children, light }: { children: ReactNode; light?: boolean }) {
   return (
     <a
       href={contactConfig.zaloUrl}
       target="_blank"
       rel="noreferrer"
-      className="inline-block rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+      className={`inline-block rounded-full px-5 py-2.5 text-[14px] font-semibold transition-colors ${
+        light ? 'bg-paper text-solder hover:bg-solder-tint' : 'bg-ink text-white hover:bg-solder'
+      }`}
     >
       {children}
     </a>
   )
 }
 
-export function OrderForm({ quote, stats, settings, file, onClose, submit = defaultSubmit }: Props) {
-  // Mã đơn tạo một lần, dùng lại khi gửi lại sau lỗi.
-  const [orderCode] = useState(() => generateOrderCode())
+export function OrderForm({
+  quote,
+  stats,
+  settings,
+  file,
+  orderCode,
+  onClose,
+  onBusyChange,
+  turnstileSiteKey = contactConfig.turnstileSiteKey,
+  submit = defaultSubmit,
+}: Props) {
   const [customer, setCustomer] = useState<CustomerInfo>({
     name: '',
     phone: '',
@@ -64,16 +81,19 @@ export function OrderForm({ quote, stats, settings, file, onClose, submit = defa
     honeypot: '',
   })
   const [errors, setErrors] = useState<CustomerErrors>({})
-  const [sending, setSending] = useState(false)
-  const [progress, setProgress] = useState(0)
+  const [stage, setStage] = useState<Stage>('idle')
   const [sendError, setSendError] = useState<string | null>(null)
   const [done, setDone] = useState(false)
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
   const sendingRef = useRef(false)
+  const turnstileRef = useRef<TurnstileHandle>(null)
   const onToken = useCallback((t: string | null) => setTurnstileToken(t), [])
 
+  const sending = stage !== 'idle'
+  useEffect(() => onBusyChange?.(sending), [sending, onBusyChange])
+
   const tooBig = !canUpload(file.size)
-  const needsTurnstile = Boolean(contactConfig.turnstileSiteKey)
+  const needsTurnstile = Boolean(turnstileSiteKey)
   const set = (patch: Partial<CustomerInfo>) => setCustomer((c) => ({ ...c, ...patch }))
 
   const onSend = async () => {
@@ -86,9 +106,8 @@ export function OrderForm({ quote, stats, settings, file, onClose, submit = defa
       return
     }
     sendingRef.current = true
-    setSending(true)
+    setStage('reading')
     setSendError(null)
-    setProgress(0)
     try {
       const fileBase64 = await fileToBase64(file)
       const payload = buildOrderPayload({
@@ -102,85 +121,112 @@ export function OrderForm({ quote, stats, settings, file, onClose, submit = defa
         fileBase64,
         turnstileToken,
       })
-      await submit(payload, { url: contactConfig.appsScriptUrl, onProgress: setProgress })
+      setStage('sending')
+      await submit(payload, { url: contactConfig.appsScriptUrl })
       setDone(true)
     } catch (e) {
       setSendError(e instanceof OrderSubmitError ? e.message : 'Không gửi được, kiểm tra mạng và thử lại')
+      // Token Turnstile chỉ dùng một lần: xin token mới cho lần gửi lại
+      if (needsTurnstile) turnstileRef.current?.reset()
     } finally {
       sendingRef.current = false
-      setSending(false)
+      setStage('idle')
     }
   }
 
   if (done) {
     return (
-      <div className="space-y-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
-        <div className="text-sm text-emerald-800">Đã gửi yêu cầu! Mã đơn của bạn:</div>
-        <div className="font-mono text-2xl font-bold tracking-wider text-emerald-900">{orderCode}</div>
-        <p className="text-sm text-emerald-800">Nhắn mã này để chốt đơn — Trung sẽ phản hồi sớm qua Zalo.</p>
-        <ZaloButton>Nhắn Zalo cho Trung</ZaloButton>
+      <div className="rounded-[22px] bg-solder p-6 text-white">
+        <div className="text-[14px] text-white/80">Đã gửi yêu cầu. Mã đơn của bạn</div>
+        <div className="mt-1 font-display text-[34px] font-bold tracking-[0.02em] tnum">{orderCode}</div>
+        <p className="mt-2 max-w-[40ch] text-[15px] text-white/90">
+          Nhắn mã này để chốt đơn. Mình xem file và trả lời bạn qua Zalo.
+        </p>
+        <div className="mt-5">
+          <ZaloButton light>Nhắn Zalo cho Trung</ZaloButton>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex items-start justify-between gap-2">
+    <div className="rounded-[22px] bg-paper p-6 ring-1 ring-mist">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="font-semibold text-slate-900">
+          <h3 className="font-display text-[24px] font-bold">
             {quote.orderType === 'quote' ? 'Gửi yêu cầu in' : 'Gửi yêu cầu tư vấn'}
-          </div>
-          <div className="text-xs text-slate-500">
-            Mã đơn: <span className="font-mono">{orderCode}</span> · {file.name}
-          </div>
+          </h3>
+          <p className="mt-1 text-[13px] text-slate">
+            Mã đơn <span className="font-semibold text-ink tnum">{orderCode}</span>, file {file.name}
+          </p>
         </div>
-        <button type="button" onClick={onClose} className="text-sm text-slate-500 hover:text-slate-800" aria-label="Đóng">
-          ✕
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={sending}
+          aria-label="Đóng"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate transition-colors hover:bg-fog hover:text-ink disabled:opacity-40"
+        >
+          <svg viewBox="0 0 16 16" className="h-4 w-4" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <path d="M3.5 3.5l9 9M12.5 3.5l-9 9" strokeLinecap="round" />
+          </svg>
         </button>
       </div>
 
       {tooBig ? (
-        <div className="space-y-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+        <div className="mt-5 space-y-4 rounded-[14px] bg-caution-tint p-4 text-[14px] text-caution">
           <p>
-            File lớn hơn {Math.round(fileLimits.uploadMaxBytes / 1024 / 1024)}MB – vui lòng gửi file qua Zalo kèm mã
-            đơn <span className="font-mono font-semibold">{orderCode}</span>.
+            File lớn hơn {Math.round(fileLimits.uploadMaxBytes / 1024 / 1024)} MB nên không gửi qua web được. Vui lòng
+            gửi file qua Zalo kèm mã đơn <strong className="tnum">{orderCode}</strong>.
           </p>
           <ZaloButton>Mở Zalo</ZaloButton>
         </div>
       ) : (
         <form
-          className="space-y-3"
+          className="mt-5 space-y-4"
           noValidate
           onSubmit={(e) => {
             e.preventDefault()
             void onSend()
           }}
         >
-          <Field id="of-name" label="Họ tên *" error={errors.name}>
-            <input id="of-name" className={inputCls} value={customer.name} onChange={(e) => set({ name: e.target.value })} />
-          </Field>
-          <Field id="of-phone" label="Zalo/SĐT *" error={errors.phone}>
-            <input
-              id="of-phone"
-              inputMode="tel"
-              className={inputCls}
-              value={customer.phone}
-              onChange={(e) => set({ phone: e.target.value })}
-            />
-          </Field>
-          <Field id="of-email" label="Email (tuỳ chọn)" error={errors.email}>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field id="of-name" label="Họ tên" error={errors.name}>
+              <input
+                id="of-name"
+                autoComplete="name"
+                className={inputCls}
+                value={customer.name}
+                onChange={(e) => set({ name: e.target.value })}
+              />
+            </Field>
+            <Field id="of-phone" label="Zalo/SĐT" error={errors.phone}>
+              <input
+                id="of-phone"
+                inputMode="tel"
+                autoComplete="tel"
+                className={inputCls}
+                value={customer.phone}
+                onChange={(e) => set({ phone: e.target.value })}
+              />
+            </Field>
+          </div>
+          <Field id="of-email" label="Email" hint="không bắt buộc" error={errors.email}>
             <input
               id="of-email"
               type="email"
+              autoComplete="email"
               className={inputCls}
               value={customer.email}
               onChange={(e) => set({ email: e.target.value })}
             />
           </Field>
-          <Field id="of-note" label="Ghi chú (tuỳ chọn)">
+          <Field id="of-note" label="Ghi chú" hint="không bắt buộc">
             <textarea
               id="of-note"
               rows={3}
+              maxLength={1500}
+              placeholder="Màu nhựa, ngày cần lấy, chỗ cần lưu ý…"
               className={inputCls}
               value={customer.note}
               onChange={(e) => set({ note: e.target.value })}
@@ -200,32 +246,26 @@ export function OrderForm({ quote, stats, settings, file, onClose, submit = defa
             />
           </div>
 
-          <div className="space-y-1">
-            <label className="flex items-start gap-2 text-sm text-slate-700">
+          <div>
+            <label className="flex cursor-pointer items-start gap-3 text-[14px] text-ink">
               <input
                 type="checkbox"
-                className="mt-0.5 h-4 w-4 accent-sky-600"
+                className="mt-0.5 h-4.5 w-4.5 shrink-0 accent-[var(--color-solder)]"
                 checked={customer.consent}
                 onChange={(e) => set({ consent: e.target.checked })}
               />
               <span>Tôi đồng ý cho Trung lưu file và liên hệ để báo giá.</span>
             </label>
-            {errors.consent && <p className="pl-6 text-xs text-red-600">{errors.consent}</p>}
+            {errors.consent && <p className="mt-1.5 pl-7 text-[13px] text-alert">{errors.consent}</p>}
           </div>
 
-          <TurnstileWidget siteKey={contactConfig.turnstileSiteKey} onToken={onToken} />
-
-          {sending && (
-            <div className="h-2 overflow-hidden rounded-full bg-slate-200" role="progressbar" aria-valuenow={Math.round(progress * 100)}>
-              <div className="h-full bg-sky-600 transition-all" style={{ width: `${Math.max(5, progress * 100)}%` }} />
-            </div>
-          )}
+          <TurnstileWidget ref={turnstileRef} siteKey={turnstileSiteKey} onToken={onToken} />
 
           {sendError && (
-            <div className="space-y-2 rounded-lg bg-red-50 p-3 text-sm text-red-800">
-              <p>{sendError}</p>
-              <p>
-                Hoặc gửi file qua Zalo kèm mã đơn <span className="font-mono font-semibold">{orderCode}</span>.
+            <div role="alert" className="space-y-3 rounded-[14px] bg-alert-tint p-4 text-[14px] text-alert">
+              <p className="font-semibold">{sendError}</p>
+              <p className="text-ink">
+                Hoặc gửi file qua Zalo kèm mã đơn <strong className="tnum">{orderCode}</strong>.
               </p>
               <ZaloButton>Gửi qua Zalo</ZaloButton>
             </div>
@@ -234,9 +274,15 @@ export function OrderForm({ quote, stats, settings, file, onClose, submit = defa
           <button
             type="submit"
             disabled={sending}
-            className="w-full rounded-lg bg-sky-600 px-4 py-2.5 font-semibold text-white shadow-sm hover:bg-sky-700 disabled:cursor-wait disabled:opacity-60"
+            className="relative w-full overflow-hidden rounded-full bg-solder px-5 py-3.5 text-[15px] font-semibold text-white transition-colors hover:bg-solder-deep disabled:cursor-wait"
           >
-            Gửi đơn
+            <span className={sending ? 'invisible' : ''}>Gửi đơn</span>
+            {sending && (
+              <span className="absolute inset-0 flex items-center justify-center gap-2.5" aria-live="polite">
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" aria-hidden="true" />
+                {stage === 'reading' ? 'Đang chuẩn bị file' : 'Đang gửi đơn'}
+              </span>
+            )}
           </button>
         </form>
       )}

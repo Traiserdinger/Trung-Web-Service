@@ -1,25 +1,35 @@
-import { useRef, useState } from 'react'
+import { forwardRef, useImperativeHandle, useRef, useState, type ReactNode } from 'react'
 import { fileLimits } from '../../config/pricingConfig'
+
+export interface DropZoneHandle {
+  openPicker(): void
+}
 
 interface Props {
   onFile(f: File): void
   disabled?: boolean
-  fileName?: string | null
+  /** true khi chưa có file: hiện lời mời thả file phủ giữa khung */
+  empty: boolean
+  children: ReactNode
 }
 
-export function DropZone({ onFile, disabled, fileName }: Props) {
+/** Biến cả sân khấu 3D thành vùng thả file. */
+export const DropZone = forwardRef<DropZoneHandle, Props>(function DropZone({ onFile, disabled, empty, children }, ref) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [over, setOver] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const open = () => !disabled && inputRef.current?.click()
+  useImperativeHandle(ref, () => ({ openPicker: open }))
+
   const accept = (f: File | undefined) => {
     if (!f) return
     if (!f.name.toLowerCase().endsWith('.stl')) {
-      setError('Chỉ nhận file .stl')
+      setError('Chỉ nhận file .stl. Với file STEP hay 3MF, hãy gửi qua Zalo.')
       return
     }
     if (f.size > fileLimits.previewMaxBytes) {
-      setError(`File quá lớn (tối đa ${Math.round(fileLimits.previewMaxBytes / 1024 / 1024)}MB)`)
+      setError(`File lớn hơn ${Math.round(fileLimits.previewMaxBytes / 1024 / 1024)} MB. Hãy gửi qua Zalo để mình xem trực tiếp.`)
       return
     }
     setError(null)
@@ -29,29 +39,48 @@ export function DropZone({ onFile, disabled, fileName }: Props) {
   return (
     <div>
       <div
-        role="button"
-        tabIndex={0}
-        aria-disabled={disabled}
-        onClick={() => !disabled && inputRef.current?.click()}
-        onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && !disabled && inputRef.current?.click()}
+        className="relative"
         onDragOver={(e) => {
           e.preventDefault()
           setOver(true)
         }}
-        onDragLeave={() => setOver(false)}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node)) setOver(false)
+        }}
         onDrop={(e) => {
           e.preventDefault()
           setOver(false)
           if (!disabled) accept(e.dataTransfer.files[0])
         }}
-        className={`flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-4 py-4 text-center text-sm transition ${
-          over ? 'border-sky-500 bg-sky-50' : 'border-slate-300 bg-white hover:border-sky-400'
-        } ${disabled ? 'cursor-wait opacity-60' : ''}`}
       >
-        <span className="font-semibold text-slate-800">Kéo-thả file .stl vào đây hoặc bấm để chọn</span>
-        <span className="mt-1 text-xs text-slate-500">
-          {fileName ? `Đang xem: ${fileName}` : 'STL dạng binary hoặc ASCII, tối đa 100MB'}
-        </span>
+        {children}
+
+        {empty && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6">
+            <div className="pointer-events-auto flex max-w-[340px] flex-col items-center rounded-[22px] bg-paper/85 px-8 py-7 text-center shadow-[0_20px_40px_-24px_rgb(27_36_32/0.35)] ring-1 ring-mist backdrop-blur">
+              <svg viewBox="0 0 48 48" className="h-11 w-11 text-solder" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M24 6 40 15v18L24 42 8 33V15z" strokeLinejoin="round" />
+                <path d="M8 15l16 9 16-9M24 24v18" strokeLinejoin="round" />
+              </svg>
+              <div className="mt-3 font-display text-[22px] font-bold text-ink">Thả file STL vào đây</div>
+              <p className="mt-1 text-[14px] text-slate">STL dạng binary hoặc ASCII, tối đa 100 MB</p>
+              <button
+                type="button"
+                onClick={open}
+                disabled={disabled}
+                className="mt-4 rounded-full bg-ink px-5 py-2.5 text-[14px] font-semibold text-white transition-colors hover:bg-solder disabled:opacity-60"
+              >
+                Chọn file từ máy
+              </button>
+            </div>
+          </div>
+        )}
+
+        {over && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-[28px] bg-solder-tint/80 ring-2 ring-solder ring-inset">
+            <span className="font-display text-[24px] font-bold text-solder">Thả để xem giá</span>
+          </div>
+        )}
       </div>
       <input
         ref={inputRef}
@@ -63,7 +92,11 @@ export function DropZone({ onFile, disabled, fileName }: Props) {
           e.target.value = ''
         }}
       />
-      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+      {error && (
+        <p role="alert" className="mt-3 rounded-[12px] bg-alert-tint px-4 py-3 text-[14px] text-alert">
+          {error}
+        </p>
+      )}
     </div>
   )
-}
+})

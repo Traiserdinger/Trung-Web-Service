@@ -28,11 +28,22 @@ const settings: PrintSettings = {
 const quote: QuoteState = { orderType: 'consult', consultReasons: ['ABS'], estimate: null, price: null }
 const file = () => new File([new Uint8Array([1, 2, 3])], 'part.stl')
 
-type Submit = NonNullable<Parameters<typeof OrderForm>[0]['submit']>
+type Props = Parameters<typeof OrderForm>[0]
+type Submit = NonNullable<Props['submit']>
+const CODE = 'P3D-261120-ABCD'
 
-function setup(submit: unknown, f: File = file()) {
+function setup(submit: unknown, f: File = file(), extra: Partial<Props> = {}) {
   render(
-    <OrderForm quote={quote} stats={stats} settings={settings} file={f} onClose={vi.fn()} submit={submit as Submit} />,
+    <OrderForm
+      quote={quote}
+      stats={stats}
+      settings={settings}
+      file={f}
+      orderCode={CODE}
+      onClose={vi.fn()}
+      submit={submit as Submit}
+      {...extra}
+    />,
   )
 }
 
@@ -78,8 +89,7 @@ describe('OrderForm', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Gửi đơn' }))
     expect(await screen.findByText(/Nhắn mã này để chốt đơn/)).toBeInTheDocument()
     const codes = submit.mock.calls.map((c) => (c[0] as OrderPayload).orderCode)
-    expect(codes[0]).toMatch(/^P3D-/)
-    expect(codes[1]).toBe(codes[0])
+    expect(codes).toEqual([CODE, CODE])
   })
 
   it('does not upload files over 35 MB and points to Zalo instead', () => {
@@ -90,5 +100,48 @@ describe('OrderForm', () => {
     expect(screen.getByText(/gửi file qua Zalo/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Gửi đơn' })).not.toBeInTheDocument()
     expect(submit).not.toHaveBeenCalled()
+  })
+
+  it('locks the close button and reports busy while sending', async () => {
+    const onBusyChange = vi.fn()
+    const submit = vi.fn(() => new Promise<{ orderCode: string }>(() => {}))
+    setup(submit, file(), { onBusyChange })
+    await fillValid()
+    await userEvent.click(screen.getByRole('button', { name: 'Gửi đơn' }))
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1))
+    expect(screen.getByRole('button', { name: 'Đóng' })).toBeDisabled()
+    expect(onBusyChange).toHaveBeenLastCalledWith(true)
+  })
+
+  it('asks Turnstile for a fresh token before retrying', async () => {
+    let callback: ((t: string) => void) | null = null
+    let issued = 0
+    const reset = vi.fn(() => callback?.(`tok${++issued}`))
+    window.turnstile = {
+      render: (_el, opts) => {
+        callback = opts.callback as (t: string) => void
+        callback(`tok${++issued}`)
+        return 'w1'
+      },
+      reset,
+      remove: vi.fn(),
+    }
+    try {
+      const submit = vi
+        .fn()
+        .mockRejectedValueOnce(new OrderSubmitError('Quá nhiều đơn'))
+        .mockImplementationOnce(async (p: OrderPayload) => ({ orderCode: p.orderCode }))
+      setup(submit, file(), { turnstileSiteKey: 'site-key' })
+      await fillValid()
+      await userEvent.click(screen.getByRole('button', { name: 'Gửi đơn' }))
+      expect(await screen.findByText('Quá nhiều đơn')).toBeInTheDocument()
+      expect(reset).toHaveBeenCalledWith('w1')
+      await userEvent.click(screen.getByRole('button', { name: 'Gửi đơn' }))
+      await waitFor(() => expect(submit).toHaveBeenCalledTimes(2))
+      const tokens = submit.mock.calls.map((c) => (c[0] as OrderPayload).turnstileToken)
+      expect(tokens).toEqual(['tok1', 'tok2'])
+    } finally {
+      delete window.turnstile
+    }
   })
 })

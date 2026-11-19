@@ -9,29 +9,43 @@ interface Props {
   supportReason: string | null
 }
 
-function Chip(p: { active: boolean; onClick(): void; children: ReactNode; title?: string }) {
+function Group({ label, children, id }: { label: string; children: ReactNode; id: string }) {
   return (
-    <button
-      type="button"
-      title={p.title}
-      aria-pressed={p.active}
-      onClick={p.onClick}
-      className={`rounded-lg border px-3 py-1.5 text-sm transition ${
-        p.active
-          ? 'border-sky-600 bg-sky-600 text-white shadow-sm'
-          : 'border-slate-300 bg-white text-slate-700 hover:border-sky-400'
-      }`}
-    >
-      {p.children}
-    </button>
+    <div role="group" aria-labelledby={id}>
+      <div id={id} className="text-[14px] font-semibold text-ink">
+        {label}
+      </div>
+      <div className="mt-2.5">{children}</div>
+    </div>
   )
 }
 
-function Row(p: { label: string; children: ReactNode }) {
+/** Nhóm nút chia đều, kiểu segmented control */
+function Segmented<T extends string | number>(p: {
+  options: { value: T; label: ReactNode }[]
+  value: T
+  onSelect(v: T): void
+}) {
   return (
-    <div className="space-y-2">
-      <div className="text-xs font-semibold tracking-wide text-slate-500 uppercase">{p.label}</div>
-      <div className="flex flex-wrap gap-2">{p.children}</div>
+    <div className="grid auto-cols-fr grid-flow-col gap-1 rounded-[12px] bg-fog p-1">
+      {p.options.map((o) => {
+        const active = o.value === p.value
+        return (
+          <button
+            key={String(o.value)}
+            type="button"
+            aria-pressed={active}
+            onClick={() => p.onSelect(o.value)}
+            className={`rounded-[9px] px-2 py-2 text-center text-[14px] leading-tight transition-[background-color,color,box-shadow] ${
+              active
+                ? 'bg-paper font-semibold text-ink shadow-[0_1px_2px_rgb(27_36_32/0.12),0_0_0_1px_rgb(27_36_32/0.06)]'
+                : 'text-slate hover:text-ink'
+            }`}
+          >
+            {o.label}
+          </button>
+        )
+      })}
     </div>
   )
 }
@@ -41,80 +55,126 @@ export function OptionsPanel({ value, onChange, supportReason }: Props) {
   const { min, max } = uiOptions.quantity
 
   return (
-    <div className="space-y-5">
-      <Row label="Loại nhựa">
-        {(Object.keys(materials) as MaterialId[]).map((id) => (
-          <Chip key={id} active={value.material === id} onClick={() => set({ material: id })}>
-            <span
-              className="mr-1.5 inline-block h-2.5 w-2.5 rounded-full border border-slate-400 align-middle"
-              style={{ backgroundColor: materials[id].color }}
-            />
-            {materials[id].label}
-          </Chip>
-        ))}
-      </Row>
+    <div className="space-y-6">
+      <Group label="Nhựa" id="opt-material">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-2">
+          {(Object.keys(materials) as MaterialId[]).map((id) => {
+            const m = materials[id]
+            const active = value.material === id
+            return (
+              <button
+                key={id}
+                type="button"
+                aria-pressed={active}
+                onClick={() => set({ material: id })}
+                className={`flex items-center gap-2.5 rounded-[12px] border px-3 py-2.5 text-left transition-colors ${
+                  active ? 'border-ink bg-paper' : 'border-mist bg-paper hover:border-slate'
+                }`}
+              >
+                {/* cuộn nhựa nhìn nghiêng */}
+                <span
+                  className="relative h-7 w-7 shrink-0 rounded-full ring-1 ring-black/10"
+                  style={{ background: `radial-gradient(circle at 50% 50%, #fff 0 22%, ${m.color} 23% 100%)` }}
+                  aria-hidden="true"
+                />
+                <span className="leading-tight">
+                  <span className="block text-[14px] font-semibold text-ink">{m.label}</span>
+                  <span className={`block text-[12px] ${m.contactOnly ? 'text-caution' : 'text-slate'}`}>
+                    {m.contactOnly ? 'Liên hệ' : `${m.density} g/cm³`}
+                  </span>
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      </Group>
 
-      <Row label="Chiều cao lớp">
-        {uiOptions.layerHeights.map((l) => (
-          <Chip key={l.value} active={value.layerHeight === l.value} onClick={() => set({ layerHeight: l.value })}>
-            {l.value.toFixed(2)} mm · {l.label}
-          </Chip>
-        ))}
-      </Row>
+      <Group label="Chiều cao lớp" id="opt-layer">
+        <Segmented
+          value={value.layerHeight}
+          onSelect={(v) => set({ layerHeight: v })}
+          options={uiOptions.layerHeights.map((l) => ({
+            value: l.value,
+            label: (
+              <>
+                <span className="block tnum">{l.value.toFixed(2)} mm</span>
+                <span className="block text-[12px] font-normal text-slate">{l.label}</span>
+              </>
+            ),
+          }))}
+        />
+      </Group>
 
-      <Row label="Độ điền đầy (Infill)">
-        {uiOptions.infills.map((n) => (
-          <Chip key={n} active={value.infillPercent === n} onClick={() => set({ infillPercent: n })}>
-            {n}%
-          </Chip>
-        ))}
-      </Row>
+      <div className="grid gap-6 sm:grid-cols-2">
+        <Group label="Độ điền đầy" id="opt-infill">
+          <Segmented
+            value={value.infillPercent}
+            onSelect={(v) => set({ infillPercent: v })}
+            options={uiOptions.infills.map((n) => ({ value: n, label: <span className="tnum">{n}%</span> }))}
+          />
+        </Group>
+        <Group label="Số lớp tường" id="opt-walls">
+          <Segmented
+            value={value.wallLoops}
+            onSelect={(v) => set({ wallLoops: v })}
+            options={uiOptions.wallLoops.map((n) => ({
+              value: n,
+              label: (
+                <span className="tnum" aria-label={`${n} tường`}>
+                  {n}
+                </span>
+              ),
+            }))}
+          />
+        </Group>
+      </div>
 
-      <Row label="Số lớp tường">
-        {uiOptions.wallLoops.map((n) => (
-          <Chip key={n} active={value.wallLoops === n} onClick={() => set({ wallLoops: n })}>
-            {n} tường
-          </Chip>
-        ))}
-      </Row>
-
-      <div className="space-y-1">
-        <label className="flex items-start gap-2 text-sm text-slate-700">
+      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
+        <label className="flex max-w-[34ch] cursor-pointer items-start gap-3">
           <input
             type="checkbox"
-            className="mt-0.5 h-4 w-4 accent-sky-600"
+            className="peer sr-only"
             checked={value.support}
             onChange={(e) => set({ support: e.target.checked })}
           />
-          <span>Mô hình có phần treo lơ lửng cần Support (+15% nhựa &amp; thời gian)</span>
-        </label>
-        {supportReason && <p className="pl-6 text-xs text-amber-700">{supportReason}</p>}
-      </div>
-
-      <div className="space-y-2">
-        <div className="text-xs font-semibold tracking-wide text-slate-500 uppercase">Số lượng</div>
-        <div className="inline-flex items-center overflow-hidden rounded-lg border border-slate-300 bg-white">
-          <button
-            type="button"
-            aria-label="Giảm số lượng"
-            disabled={value.quantity <= min}
-            onClick={() => value.quantity > min && set({ quantity: value.quantity - 1 })}
-            className="px-3 py-1.5 text-lg text-slate-700 hover:bg-slate-100 disabled:opacity-40"
-          >
-            −
-          </button>
-          <span className="w-12 text-center font-mono text-sm" aria-live="polite">
-            {value.quantity}
+          <span
+            aria-hidden="true"
+            className="relative mt-0.5 h-6 w-10 shrink-0 rounded-full bg-mist transition-colors peer-checked:bg-solder peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-solder after:absolute after:top-0.5 after:left-0.5 after:h-5 after:w-5 after:rounded-full after:bg-paper after:shadow after:transition-transform peer-checked:after:translate-x-4"
+          />
+          <span>
+            <span className="block text-[14px] font-semibold text-ink">Cần support cho phần treo lơ lửng</span>
+            <span className="block text-[13px] text-slate">Thêm 15% nhựa và thời gian in</span>
+            {supportReason && <span className="mt-1 block text-[13px] font-medium text-caution">{supportReason}</span>}
           </span>
-          <button
-            type="button"
-            aria-label="Tăng số lượng"
-            disabled={value.quantity >= max}
-            onClick={() => value.quantity < max && set({ quantity: value.quantity + 1 })}
-            className="px-3 py-1.5 text-lg text-slate-700 hover:bg-slate-100 disabled:opacity-40"
-          >
-            +
-          </button>
+        </label>
+
+        <div role="group" aria-labelledby="opt-qty">
+          <div id="opt-qty" className="text-[14px] font-semibold text-ink">
+            Số lượng
+          </div>
+          <div className="mt-2 inline-flex items-center rounded-full border border-mist bg-paper">
+            <button
+              type="button"
+              aria-label="Giảm số lượng"
+              disabled={value.quantity <= min}
+              onClick={() => value.quantity > min && set({ quantity: value.quantity - 1 })}
+              className="h-10 w-10 rounded-full text-[20px] text-ink hover:bg-fog disabled:opacity-35"
+            >
+              −
+            </button>
+            <span className="w-10 text-center text-[16px] font-semibold tnum" aria-live="polite">
+              {value.quantity}
+            </span>
+            <button
+              type="button"
+              aria-label="Tăng số lượng"
+              disabled={value.quantity >= max}
+              onClick={() => value.quantity < max && set({ quantity: value.quantity + 1 })}
+              className="h-10 w-10 rounded-full text-[20px] text-ink hover:bg-fog disabled:opacity-35"
+            >
+              +
+            </button>
+          </div>
         </div>
       </div>
     </div>
