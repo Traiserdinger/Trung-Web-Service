@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { flipWinding, makeBox, makeTShape, makeUvSphere, removeTriangles } from '../../tests/fixtures/meshes'
+import { flipWinding, makeBox, makeFlare, makeTShape, makeUvSphere, removeTriangles } from '../../tests/fixtures/meshes'
 import { analyzeMesh, exceedsBed, isSuspectedInches, orientZUpToYUp } from './meshAnalysis'
 
 const analyze = (p: Float32Array) => analyzeMesh(orientZUpToYUp(p))
@@ -53,6 +53,13 @@ describe('meshAnalysis', () => {
   it('overhang: T shape bar underside counts, cube on bed does not', () => {
     expect(analyze(makeTShape()).overhangArea).toBeCloseTo(300, 3)
     expect(analyze(makeBox(10, 10, 10)).overhangArea).toBe(0)
+  })
+
+  it('counts overhang faces that touch the bed with one corner (CAD tessellation)', () => {
+    const s = analyze(makeFlare())
+    expect(s.signedVolume).toBeGreaterThan(0)
+    // 4 mặt hình thang: (10 + 70) / 2 × √(30² + 20²)
+    expect(s.overhangArea).toBeCloseTo(4 * 40 * Math.hypot(30, 20), 1)
   })
 
   it('inverted winding still gives positive volume and the same overhang', () => {

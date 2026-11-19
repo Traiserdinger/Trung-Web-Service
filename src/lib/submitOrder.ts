@@ -2,25 +2,27 @@ import type { OrderPayload } from '../utils/orderPayload'
 
 export class OrderSubmitError extends Error {}
 
-export type Transport = (url: string, body: string, onProgress?: (fraction: number) => void) => Promise<string>
+export type Transport = (url: string, body: string) => Promise<string>
 
 const NETWORK = 'Không gửi được, kiểm tra mạng và thử lại'
 
-/** POST text/plain (không preflight CORS) tới Apps Script, có báo tiến trình upload. */
-export const xhrTransport: Transport = (url, body, onProgress) =>
-  new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest()
-    xhr.open('POST', url)
-    xhr.setRequestHeader('Content-Type', 'text/plain;charset=utf-8')
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) onProgress?.(e.loaded / e.total)
-    }
-    xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve(xhr.responseText) : reject(new Error(`HTTP ${xhr.status}`)))
-    xhr.onerror = () => reject(new Error('network'))
-    xhr.ontimeout = () => reject(new Error('timeout'))
-    xhr.timeout = 5 * 60 * 1000
-    xhr.send(body)
+/**
+ * POST text/plain tới Apps Script bằng fetch.
+ *
+ * Phải là "simple request": chỉ Content-Type text/plain, không header tuỳ biến,
+ * không theo dõi tiến trình upload (XHR upload listener cũng ép preflight).
+ * Apps Script không trả lời OPTIONS, nên mọi preflight đều làm đơn thất bại.
+ */
+export const fetchTransport: Transport = async (url, body) => {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body,
+    redirect: 'follow',
   })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return res.text()
+}
 
 export function fileToBase64(f: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -36,14 +38,14 @@ export function fileToBase64(f: Blob): Promise<string> {
 
 export async function submitOrder(
   p: OrderPayload,
-  opts: { url: string; transport?: Transport; onProgress?: (f: number) => void },
+  opts: { url: string; transport?: Transport },
 ): Promise<{ orderCode: string }> {
   if (!opts.url) throw new OrderSubmitError('Chưa cấu hình nơi nhận đơn')
-  const transport = opts.transport ?? xhrTransport
+  const transport = opts.transport ?? fetchTransport
 
   let text: string
   try {
-    text = await transport(opts.url, JSON.stringify(p), opts.onProgress)
+    text = await transport(opts.url, JSON.stringify(p))
   } catch {
     throw new OrderSubmitError(NETWORK)
   }

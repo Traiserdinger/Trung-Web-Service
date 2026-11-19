@@ -63,7 +63,9 @@ export function analyzeMesh(p: Float32Array, cfg: SlicerConfig = slicerConfig): 
   // Diện tích từng tam giác + pháp tuyến (chưa chuẩn hoá theo chiều winding) để tính mặt treo sau.
   const triArea = new Float64Array(triangleCount)
   const triNy = new Float64Array(triangleCount)
-  const triMinY = new Float64Array(triangleCount)
+  // Đỉnh cao nhất của tam giác: mặt chỉ bị loại khi NẰM HẲN sát bàn in (max y ≤ bedContactMm),
+  // vì tam giác CAD dài thường có một góc chạm bàn mà vẫn là mặt treo.
+  const triMaxY = new Float64Array(triangleCount)
 
   for (let t = 0; t < triangleCount; t++) {
     const o = t * 9
@@ -81,7 +83,7 @@ export function analyzeMesh(p: Float32Array, cfg: SlicerConfig = slicerConfig): 
     area += a
     triArea[t] = a
     triNy[t] = len > 0 ? ny / len : 0
-    triMinY[t] = Math.min(ay, by, cy)
+    triMaxY[t] = Math.max(ay, by, cy)
 
     // a · (b × c) / 6
     signed += (ax * (by * cz - bz * cy) + ay * (bz * cx - bx * cz) + az * (bx * cy - by * cx)) / 6
@@ -99,7 +101,7 @@ export function analyzeMesh(p: Float32Array, cfg: SlicerConfig = slicerConfig): 
   const threshold = -Math.cos((cfg.overhangAngleDeg * Math.PI) / 180)
   let overhangArea = 0
   for (let t = 0; t < triangleCount; t++) {
-    if (triNy[t] * orientation < threshold && triMinY[t] > cfg.bedContactMm) overhangArea += triArea[t]
+    if (triNy[t] * orientation < threshold && triMaxY[t] > cfg.bedContactMm) overhangArea += triArea[t]
   }
 
   const dims: Dims =

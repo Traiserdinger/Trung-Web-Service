@@ -97,3 +97,23 @@ export function toAsciiStl(p: Float32Array): ArrayBuffer {
   lines.push('endsolid test')
   return new TextEncoder().encode(lines.join('\n')).buffer as ArrayBuffer
 }
+
+/**
+ * Khối loe: đáy 10×10 trên bàn, mặt trên 70×70 ở độ cao 20 (vách nghiêng 56° so với phương đứng).
+ * Mỗi mặt bên là 2 tam giác dài, cả hai đều có đỉnh chạm bàn — kiểu tessellation CAD hay xuất.
+ */
+export function makeFlare(): Float32Array {
+  const b = 5
+  const t = 35
+  const h = 20
+  const B: V3[] = [[-b, -b, 0], [b, -b, 0], [b, b, 0], [-b, b, 0]]
+  const T: V3[] = [[-t, -t, h], [t, -t, h], [t, t, h], [-t, t, h]]
+  const o: number[] = []
+  pushQuad(o, T[0], T[1], T[2], T[3]) // nóc +z
+  pushQuad(o, B[0], B[3], B[2], B[1]) // đáy -z
+  for (let i = 0; i < 4; i++) {
+    const j = (i + 1) % 4
+    pushQuad(o, B[i], B[j], T[j], T[i]) // mặt bên hướng ra ngoài và xuống dưới
+  }
+  return new Float32Array(o)
+}

@@ -36,27 +36,34 @@ function doPost(e) {
   var invalid = validate_(payload);
   if (invalid) return json_({ ok: false, error: invalid });
 
-  // 2. Turnstile (nếu bật).
+  // 2. Gửi lại cùng mã đơn (mạng chập chờn, khách bấm thử lại) → coi như đã nhận, không tạo bản trùng.
+  //    Đặt trước Turnstile vì token cũ đã bị dùng ở lần trước.
+  var rootId = props.getProperty('DRIVE_FOLDER_ID');
+  if (alreadyReceived_(rootId, payload.orderCode)) return json_({ ok: true, orderCode: payload.orderCode });
+
+  // 3. Turnstile (nếu bật).
   var secret = props.getProperty('TURNSTILE_SECRET');
   if (secret && !verifyTurnstile_(secret, payload.turnstileToken)) {
     return json_({ ok: false, error: 'Xác minh chống spam thất bại' });
   }
 
-  // 3. Giới hạn tần suất theo SĐT.
-  if (!allowRate_(payload.customer.phone)) {
+  // 4. Giới hạn tần suất theo SĐT (chỉ đếm đơn đã lưu thành công).
+  if (rateLimited_(payload.customer.phone)) {
     return json_({ ok: false, error: 'Bạn đã gửi quá nhiều đơn, vui lòng thử lại sau 10 phút' });
   }
 
-  // 4. Lưu Drive — bước bắt buộc.
+  // 5. Lưu Drive — bước bắt buộc.
   var folderUrl;
   try {
-    folderUrl = saveToDrive_(props.getProperty('DRIVE_FOLDER_ID'), payload);
+    folderUrl = saveToDrive_(rootId, payload);
   } catch (err) {
     console.error('Drive error', err);
     return json_({ ok: false, error: 'Không lưu được file, vui lòng gửi qua Zalo kèm mã đơn' });
   }
+  markReceived_(payload.orderCode);
+  countRate_(payload.customer.phone);
 
-  // 5–6. Thông báo — lỗi ở đây không làm hỏng đơn vì file đã lưu.
+  // 6–7. Thông báo — lỗi ở đây không làm hỏng đơn vì file đã lưu.
   var text = formatMessage_(payload, folderUrl);
   try {
     sendTelegram_(props.getProperty('TELEGRAM_BOT_TOKEN'), props.getProperty('TELEGRAM_CHAT_ID'), text);
@@ -95,14 +102,32 @@ function verifyTurnstile_(secret, token) {
   }
 }
 
-function allowRate_(phone) {
-  var key = 'rl_' + String(phone).replace(/[^\d+]/g, '').replace(/^\+84/, '0');
+function rateKey_(phone) {
+  return 'rl_' + String(phone).replace(/[^\d+]/g, '').replace(/^\+84/, '0');
+}
+
+function rateLimited_(phone) {
+  return Number(CacheService.getScriptCache().get(rateKey_(phone)) || 0) >= RATE_LIMIT_COUNT;
+}
+
+function countRate_(phone) {
   var cache = CacheService.getScriptCache();
-  var count = Number(cache.get(key) || 0);
-  if (count >= RATE_LIMIT_COUNT) return false;
+  var key = rateKey_(phone);
   // Cửa sổ 10 phút tính từ đơn gần nhất — đủ chặn spam, không cần chính xác tuyệt đối.
-  cache.put(key, String(count + 1), RATE_LIMIT_WINDOW_SEC);
-  return true;
+  cache.put(key, String(Number(cache.get(key) || 0) + 1), RATE_LIMIT_WINDOW_SEC);
+}
+
+function alreadyReceived_(rootId, orderCode) {
+  if (CacheService.getScriptCache().get('done_' + orderCode)) return true;
+  try {
+    return DriveApp.getFolderById(rootId).getFoldersByName(orderCode).hasNext();
+  } catch (err) {
+    return false;
+  }
+}
+
+function markReceived_(orderCode) {
+  CacheService.getScriptCache().put('done_' + orderCode, '1', 21600); // 6 giờ, mức tối đa của CacheService
 }
 
 function saveToDrive_(folderId, p) {

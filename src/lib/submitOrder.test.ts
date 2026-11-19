@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { OrderPayload } from '../utils/orderPayload'
 import { OrderSubmitError, submitOrder, type Transport } from './submitOrder'
 
@@ -34,5 +34,31 @@ describe('submitOrder', () => {
     await expect(submitOrder(payload, { url: '', transport: reply({ ok: true }) })).rejects.toThrow(
       'Chưa cấu hình nơi nhận đơn',
     )
+  })
+})
+
+describe('default transport', () => {
+  it('posts text/plain with fetch and never touches XMLHttpRequest (no CORS preflight)', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true, orderCode: 'P3D-261120-AAAA' })))
+    vi.stubGlobal('fetch', fetchMock)
+    vi.stubGlobal(
+      'XMLHttpRequest',
+      vi.fn(() => {
+        throw new Error('XMLHttpRequest must not be used: upload listeners force a CORS preflight')
+      }),
+    )
+    try {
+      await expect(submitOrder(payload, { url: 'https://script.example/exec' })).resolves.toEqual({
+        orderCode: 'P3D-261120-AAAA',
+      })
+      expect(fetchMock).toHaveBeenCalledWith('https://script.example/exec', {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload),
+        redirect: 'follow',
+      })
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })
