@@ -29,14 +29,14 @@ export function Services() {
                 key={t.name}
                 className={`relative flex flex-col rounded-[22px] p-6 ${STEP_OFFSET[i]} ${
                   dark
-                    ? 'bg-solder text-white shadow-[0_30px_60px_-30px_rgb(18_112_74/0.65)]'
+                    ? 'bg-solder-fill text-white shadow-[0_30px_60px_-30px_rgb(18_112_74/0.65)]'
                     : t.recommended
                       ? 'bg-solder-tint ring-1 ring-solder/25'
                       : 'bg-studio ring-1 ring-mist'
                 }`}
               >
                 {t.recommended && (
-                  <span className="absolute -top-3 left-6 rounded-full bg-ink px-3 py-1 text-[12px] font-semibold text-white">
+                  <span className="absolute -top-3 left-6 rounded-full bg-ink px-3 py-1 text-[12px] font-semibold text-on-ink">
                     Khuyên dùng
                   </span>
                 )}
@@ -69,7 +69,7 @@ export function Services() {
             href={contactConfig.zaloUrl}
             target="_blank"
             rel="noreferrer"
-            className="shrink-0 self-start rounded-full bg-ink px-6 py-3 text-[15px] font-semibold text-white transition-colors hover:bg-solder sm:self-auto"
+            className="shrink-0 self-start rounded-full bg-ink px-6 py-3 text-[15px] font-semibold text-on-ink transition-colors hover:bg-solder sm:self-auto"
           >
             Gửi yêu cầu thiết kế qua Zalo
           </a>

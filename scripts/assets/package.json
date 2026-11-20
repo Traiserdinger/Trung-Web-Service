@@ -1,0 +1,19 @@
+{
+  "name": "site-asset-tools",
+  "private": true,
+  "type": "module",
+  "description": "Chuyển file gốc của dự án (STEP, Gerber, ảnh layer) thành tài nguyên nhẹ cho web. Không chạy khi build site.",
+  "scripts": {
+    "step": "python step-to-glb.py",
+    "glb": "node optimize-glb.mjs",
+    "layers": "node build-layers.mjs"
+  },
+  "dependencies": {
+    "@gltf-transform/core": "^4.2.1",
+    "@gltf-transform/extensions": "^4.2.1",
+    "@gltf-transform/functions": "^4.2.1",
+    "@tracespace/core": "^5.0.0-alpha.0",
+    "meshoptimizer": "^0.22.0",
+    "sharp": "^0.34.2"
+  }
+}

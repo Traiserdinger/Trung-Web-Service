@@ -89,7 +89,7 @@ export function QuoteResult({ quote, stats, onSubmit }: Props) {
         <button
           type="button"
           onClick={onSubmit}
-          className="mt-5 w-full rounded-full bg-solder px-5 py-3.5 text-[15px] font-semibold text-white transition-colors hover:bg-solder-deep"
+          className="mt-5 w-full rounded-full bg-solder-fill px-5 py-3.5 text-[15px] font-semibold text-white transition-colors hover:bg-solder-deep"
         >
           {isQuote ? 'Gửi yêu cầu in' : 'Gửi yêu cầu tư vấn'}
         </button>

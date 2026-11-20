@@ -1,4 +1,5 @@
 import { projects, type Project } from '../../content/siteContent'
+import { Px4CaseStudy } from './Px4CaseStudy'
 
 function RepoLink({ href }: { href: string }) {
   return (
@@ -37,35 +38,6 @@ function Tag({ children }: { children: string }) {
   )
 }
 
-function Featured({ p }: { p: Project }) {
-  const [render, photo] = p.images
-  return (
-    <article className="grid grid-cols-12 items-center gap-x-6 gap-y-10">
-      <div className="relative col-span-12 lg:col-span-7">
-        <figure className="overflow-hidden rounded-[28px] bg-paper p-6 shadow-[0_30px_60px_-40px_rgb(27_36_32/0.45)] ring-1 ring-mist sm:p-10">
-          <img src={render.src} alt={render.alt} loading="lazy" className="mx-auto aspect-square w-full max-w-[520px] object-contain" />
-          <figcaption className="mt-4 text-[13px] text-slate">{render.caption}</figcaption>
-        </figure>
-        {photo && (
-          <figure className="absolute -bottom-8 right-4 w-[38%] max-w-[230px] rotate-[3deg] overflow-hidden rounded-[18px] bg-paper p-2 shadow-[0_24px_40px_-20px_rgb(27_36_32/0.5)] ring-1 ring-mist sm:right-8">
-            <img src={photo.src} alt={photo.alt} loading="lazy" className="aspect-[3/4] w-full rounded-[12px] object-cover" />
-            <figcaption className="px-1 pt-2 pb-1 text-[12px] text-slate">{photo.caption}</figcaption>
-          </figure>
-        )}
-      </div>
-      <div className="col-span-12 lg:col-span-5 lg:pl-6">
-        <Tag>{p.tag}</Tag>
-        <h3 className="mt-3 text-[clamp(28px,3.2vw,40px)] font-bold">{p.title}</h3>
-        <p className="mt-4 max-w-[46ch] text-[17px] leading-[1.7] text-slate">{p.summary}</p>
-        <Facts items={p.facts} />
-        <div className="mt-7">
-          <RepoLink href={p.repoUrl} />
-        </div>
-      </div>
-    </article>
-  )
-}
-
 /** Sơ đồ vòng điều khiển bay — minh hoạ cho dự án chỉ có firmware */
 function ControlLoopDiagram() {
   const box = 'fill-paper stroke-mist'
@@ -79,7 +51,7 @@ function ControlLoopDiagram() {
       <g fontFamily="var(--font-sans)" fontSize="13" fill="var(--color-ink)">
         <rect x="10" y="40" width="88" height="44" rx="10" className={box} strokeWidth="1.5" />
         <text x="54" y="67" textAnchor="middle">i-Bus RC</text>
-        <rect x="140" y="40" width="88" height="44" rx="10" fill="var(--color-solder)" />
+        <rect x="140" y="40" width="88" height="44" rx="10" fill="var(--color-solder-fill)" />
         <text x="184" y="67" textAnchor="middle" fill="#fff" fontWeight="600">PID</text>
         <rect x="270" y="40" width="140" height="44" rx="10" className={box} strokeWidth="1.5" />
         <text x="340" y="67" textAnchor="middle">Trộn 4 động cơ</text>
@@ -143,7 +115,7 @@ export function Projects() {
         </p>
       </div>
       <div className="mt-16">
-        <Featured p={featured} />
+        <Px4CaseStudy p={featured} />
       </div>
       <div className="mt-24 grid grid-cols-12 gap-x-6 gap-y-16 lg:gap-x-10">
         {rest.map((p, i) => (
