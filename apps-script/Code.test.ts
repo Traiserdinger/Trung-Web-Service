@@ -104,4 +104,33 @@ describe('Apps Script doPost', () => {
       error: 'Bạn đã gửi quá nhiều đơn, vui lòng thử lại sau 10 phút',
     })
   })
+
+  it('answers JSON and still notifies when the estimate is malformed after saving', () => {
+    const p = order('P3D-261120-AAAA') as ReturnType<typeof order> & { estimate: { grams: unknown } }
+    p.estimate.grams = null
+    expect(post(p)).toEqual({ ok: true, orderCode: 'P3D-261120-AAAA' })
+    expect(f.telegrams).toHaveLength(1)
+  })
+
+  it('rejects a resend under the same code with different content instead of silently dropping it', () => {
+    post(order('P3D-261120-AAAA'))
+    const changed = order('P3D-261120-AAAA')
+    changed.settings = { ...changed.settings, quantity: 5 }
+    expect(post(changed).ok).toBe(false)
+  })
+
+  it('records a Zalo hand-off order (file too big) without an STL', () => {
+    const p = { ...order('P3D-261120-AAAB'), fileBase64: '', fileDelivery: 'zalo' }
+    expect(post(p).ok).toBe(true)
+    expect(f.telegrams[0]).toMatch(/khách sẽ gửi qua Zalo/)
+  })
+
+  it('flags inch-rescaled files and keeps customer notes from forging the Drive line', () => {
+    const p = order('P3D-261120-AAAC')
+    p.customer = { ...p.customer, note: 'xin chào\nDrive: https://evil.example' }
+    post({ ...p, scale: 25.4 })
+    const lines = f.telegrams[0].split('\n')
+    expect(lines.filter((l) => l.startsWith('Drive: '))).toEqual(['Drive: https://drive/P3D-261120-AAAC'])
+    expect(f.telegrams[0]).toMatch(/×25,4/)
+  })
 })
