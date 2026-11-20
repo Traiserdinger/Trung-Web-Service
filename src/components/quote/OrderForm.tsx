@@ -69,7 +69,7 @@ function ZaloButton({ children, light }: { children: ReactNode; light?: boolean 
       target="_blank"
       rel="noreferrer"
       className={`inline-block rounded-full px-5 py-2.5 text-[14px] font-semibold transition-colors ${
-        light ? 'bg-paper text-solder hover:bg-solder-tint' : 'bg-ink text-white hover:bg-solder'
+        light ? 'bg-paper text-solder hover:bg-solder-tint' : 'bg-ink text-on-ink hover:bg-solder'
       }`}
     >
       {children}
@@ -189,7 +189,7 @@ export function OrderForm({
         ref={doneRef}
         tabIndex={-1}
         role="status"
-        className="rounded-[22px] bg-solder p-6 text-white outline-none focus-visible:ring-4 focus-visible:ring-white/60"
+        className="rounded-[22px] bg-solder-fill p-6 text-white outline-none focus-visible:ring-4 focus-visible:ring-white/60"
       >
         <div className="text-[14px] text-white/80">Đã gửi yêu cầu cho file {file.name}. Mã đơn của bạn</div>
         <div className="mt-1 font-display text-[34px] font-bold tracking-[0.02em] tnum">{orderCode}</div>
@@ -346,7 +346,7 @@ export function OrderForm({
         <button
           type="submit"
           disabled={sending}
-          className="relative w-full overflow-hidden rounded-full bg-solder px-5 py-3.5 text-[15px] font-semibold text-white transition-colors hover:bg-solder-deep disabled:cursor-wait"
+          className="relative w-full overflow-hidden rounded-full bg-solder-fill px-5 py-3.5 text-[15px] font-semibold text-white transition-colors hover:bg-solder-deep disabled:cursor-wait"
         >
           <span className={sending ? 'invisible' : ''}>Gửi đơn</span>
           {sending && (

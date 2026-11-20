@@ -13,7 +13,7 @@ export function Hero() {
           <div className="mt-9 flex flex-wrap items-center gap-3">
             <a
               href="#bao-gia"
-              className="rounded-full bg-solder px-6 py-3 text-[15px] font-semibold text-white shadow-[0_8px_24px_-10px_rgb(18_112_74/0.7)] transition-colors hover:bg-solder-deep"
+              className="rounded-full bg-solder-fill px-6 py-3 text-[15px] font-semibold text-white shadow-[0_8px_24px_-10px_rgb(18_112_74/0.7)] transition-colors hover:bg-solder-deep"
             >
               {hero.primaryCta}
             </a>

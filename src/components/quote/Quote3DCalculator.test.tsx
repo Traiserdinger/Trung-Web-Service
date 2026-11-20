@@ -7,7 +7,7 @@ import type { OrderPayload } from '../../utils/orderPayload'
 
 const h = vi.hoisted(() => ({ parse: vi.fn(), submit: vi.fn() }))
 vi.mock('./StlViewer', () => ({ StlViewer: forwardRef(() => null) }))
-vi.mock('../../lib/stlWorkerClient', () => ({ parseStlInWorker: h.parse }))
+vi.mock('../../lib/stlWorkerClient', () => ({ parseStlInWorker: h.parse, orientInWorker: h.parse }))
 vi.mock('../../lib/submitOrder', async (orig) => ({
   ...(await orig<typeof import('../../lib/submitOrder')>()),
   submitOrder: h.submit,

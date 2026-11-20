@@ -25,3 +25,6 @@ dist-ssr
 
 # superpowers scratch
 .superpowers/
+
+# wrangler
+.wrangler/

@@ -17,11 +17,52 @@
   --color-alert-tint: #fdecea;
   --color-caution: #8a5a00;
   --color-caution-tint: #fdf4dc;
+  /* Chữ đặt trên nền ink / nền solder đặc */
+  --color-on-ink: #ffffff;
+  --color-solder-fill: #12704a;
+  /* Nền footer và chữ tối cố định — không đảo theo theme */
+  --color-night: #1b2420;
+  --color-dot: rgb(27 36 32 / 0.09);
 
   --font-display: "Bricolage Grotesque", "Be Vietnam Pro", ui-sans-serif, system-ui, sans-serif;
   --font-sans: "Be Vietnam Pro", ui-sans-serif, system-ui, sans-serif;
 
   --ease-settle: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Màu phim khi xem từng lớp đồng — sân khấu lớp luôn nền tối nên không đổi theo theme */
+:root {
+  --film-signal: #e3b64f;
+  --film-ground: #4cc28b;
+  --film-power: #ef9459;
+}
+
+/*
+ * Giao diện tối: "bàn làm việc tắt đèn". Nền là xanh rêu rất sâu của solder mask,
+ * chữ màu bạc thiếc, điểm nhấn xanh và vàng ENIG sáng lên để giữ tương phản ≥ 4,5:1.
+ * Theme do <html data-theme> quyết định (script nhỏ trong index.html đặt trước khi vẽ).
+ */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-studio: #101815;
+  --color-paper: #17211d;
+  --color-ink: #e4ebe7;
+  --color-slate: #9eaca5;
+  --color-mist: #2b3833;
+  --color-fog: #1f2a26;
+  --color-solder: #4cc28b;
+  --color-solder-deep: #13603f;
+  --color-solder-tint: #173a2a;
+  --color-enig: #e0b85a;
+  --color-enig-ink: #e8c877;
+  --color-alert: #ff8a7d;
+  --color-alert-tint: #3b1c19;
+  --color-caution: #e9bd5f;
+  --color-caution-tint: #33290f;
+  --color-on-ink: #101815;
+  --color-solder-fill: #1a7f52;
+  --color-night: #0a100d;
+  --color-dot: rgb(228 235 231 / 0.07);
 }
 
 @layer base {
@@ -38,6 +79,7 @@
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+    transition: background-color 0.3s var(--ease-settle), color 0.3s var(--ease-settle);
   }
 
   h1,
@@ -79,7 +121,7 @@
   /* Lưới chấm mờ kiểu giấy kỹ thuật, dùng cho sân khấu 3D */
   .stage-dots {
     background-color: var(--color-paper);
-    background-image: radial-gradient(circle at 1px 1px, rgb(27 36 32 / 0.09) 1px, transparent 0);
+    background-image: radial-gradient(circle at 1px 1px, var(--color-dot) 1px, transparent 0);
     background-size: 22px 22px;
   }
 }
@@ -124,7 +166,7 @@
 .callout span {
   padding: 4px 9px;
   border-radius: 999px;
-  background: rgb(255 255 255 / 0.9);
+  background: color-mix(in srgb, var(--color-paper) 90%, transparent);
   border: 1px solid var(--color-mist);
   backdrop-filter: blur(6px);
 }

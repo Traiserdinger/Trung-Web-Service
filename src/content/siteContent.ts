@@ -2,6 +2,8 @@
 
 const GH = 'https://github.com/Traiserdinger'
 const RAW = 'https://raw.githubusercontent.com/Traiserdinger'
+/** Ảnh và mô hình 3D của mạch PX4, tạo bằng scripts/assets từ repo gốc */
+const PX4 = '/projects/px4'
 
 export const hero = {
   title: 'Mạch vừa vỏ, ngay từ bản vẽ đầu tiên.',
@@ -41,20 +43,15 @@ export const projects: Project[] = [
     id: 'px4',
     title: 'Mạch điều khiển bay PX4 tự thiết kế',
     summary:
-      'Bo FMU chạy PX4 dựa trên STM32H743, vẽ trên Altium Designer từ schematic tới layout, xuất BOM và kèm vỏ in 3D cho khung F450.',
-    facts: ['STM32H743', 'Altium Designer', 'Schematic, PCB, BOM', 'Vỏ in 3D'],
+      'Bo FMU chạy PX4 dựa trên STM32H743. Bản A vẽ trên Altium, đã gia công và chạy thử. Bản B làm lại trên OrCAD và Allegro: nhỏ hơn, 6 lớp, nguồn lấy thẳng từ pin.',
+    facts: ['STM32H743', 'Altium và Allegro', 'Schematic, PCB, BOM', 'Vỏ in 3D'],
     tag: 'Mạch và vỏ',
     repoUrl: `${GH}/Custom-PX4-Flight-Controller`,
     images: [
       {
-        src: `${RAW}/Custom-PX4-Flight-Controller/main/Docs/images/pcb_3d_top.png`,
-        alt: 'Ảnh render 3D mặt trên mạch điều khiển bay PX4',
-        caption: 'Bản render từ Altium',
-      },
-      {
-        src: `${RAW}/Custom-PX4-Flight-Controller/main/Docs/images/pcb_top.jpg`,
-        alt: 'Ảnh chụp mạch PX4 thật sau khi gia công và hàn',
-        caption: 'Mạch thật sau khi hàn',
+        src: `${PX4}/revb-iso-top.webp`,
+        alt: 'Ảnh render 3D mạch điều khiển bay PX4 bản B',
+        caption: 'Bản B, render từ file STEP',
       },
     ],
   },
@@ -83,6 +80,107 @@ export const projects: Project[] = [
     tag: 'Firmware',
     repoUrl: `${GH}/ESP-FC-F450-Quadcopter`,
     images: [],
+  },
+]
+
+/** Loại lớp đồng — quyết định màu khi xem từng lớp */
+export type LayerKind = 'signal' | 'ground' | 'power'
+
+export interface BoardLayer {
+  id: string
+  /** Tên ngắn trên sơ đồ mặt cắt */
+  name: string
+  /** Lớp này dùng để làm gì */
+  role: string
+  kind: LayerKind
+  src: string
+}
+
+export interface BoardRevision {
+  id: 'a' | 'b'
+  label: string
+  version: string
+  tool: string
+  status: string
+  /** Đã có mạch thật hay mới trên bản vẽ */
+  built: boolean
+  size: string
+  stackup: string
+  highlights: string[]
+  render: { src: string; alt: string }
+  /** Ảnh nhỏ đặt chồng góc ảnh render: ảnh chụp mạch thật, hoặc mặt dưới */
+  inset?: { src: string; alt: string; caption: string; fit: 'cover' | 'contain' }
+  /** Bo góc của bo mạch, theo % cạnh — để vẽ khung khi xem từng lớp */
+  cornerRadius: string
+  model: { src: string; sizeLabel: string; note?: string }
+  layers: BoardLayer[]
+}
+
+/** Case study PX4: hai bản mạch, mỗi bản có ảnh render, từng lớp đồng và mô hình 3D từ file STEP */
+export const px4Revisions: BoardRevision[] = [
+  {
+    id: 'a',
+    label: 'Bản A',
+    version: 'V1.0',
+    tool: 'Altium Designer',
+    status: 'Đã gia công, hàn và chạy thử',
+    built: true,
+    size: '69,5 × 68,7 mm',
+    stackup: '4 lớp',
+    highlights: [
+      'Hai IMU ICM-42688-P và ICM-42670-P, hai cảm biến áp suất BMP390L và BMP581',
+      '4 cổng motor và 4 cổng AUX qua buffer SN74LVC244',
+      'Nguồn 5 V cấp từ ngoài, đo dòng bằng INA219',
+    ],
+    render: { src: `${PX4}/reva-render-top.webp`, alt: 'Ảnh render 3D mặt trên mạch PX4 bản A từ Altium' },
+    inset: {
+      src: `${PX4}/reva-photo-top.webp`,
+      alt: 'Ảnh chụp mạch PX4 bản A sau khi gia công và hàn',
+      caption: 'Mạch thật sau khi hàn',
+      fit: 'cover',
+    },
+    cornerRadius: '10%',
+    model: { src: `${PX4}/fmu-rev-a.glb`, sizeLabel: '0,4 MB' },
+    layers: [
+      { id: 'l1', name: 'Top', role: 'Linh kiện và đường tín hiệu', kind: 'signal', src: `${PX4}/reva-l1-top.webp` },
+      { id: 'l2', name: 'Lớp trong 1', role: 'Mặt đồng liền, chỉ khoét chỗ via đi qua', kind: 'ground', src: `${PX4}/reva-l2-inner1.webp` },
+      { id: 'l3', name: 'Lớp trong 2', role: 'Mặt đồng liền thứ hai', kind: 'ground', src: `${PX4}/reva-l3-inner2.webp` },
+      { id: 'l4', name: 'Bottom', role: 'Linh kiện mặt dưới và đường tín hiệu', kind: 'signal', src: `${PX4}/reva-l4-bottom.webp` },
+    ],
+  },
+  {
+    id: 'b',
+    label: 'Bản B',
+    version: 'V1.1',
+    tool: 'OrCAD Capture và Allegro 24.1',
+    status: 'Xong layout, đang review, chưa gia công',
+    built: false,
+    size: '40,5 × 40,5 mm',
+    stackup: '6 lớp, dày 1,6 mm',
+    highlights: [
+      'Nhỏ hơn gần một nửa, 4 lỗ M3 cách nhau 32,6 mm',
+      'Buck TPS5430 lấy nguồn thẳng từ pin 3S–6S',
+      '8 cổng motor nối thẳng MCU, chạy được DShot hai chiều',
+      'Thêm la bàn HMC5883L, mỗi IMU một bus SPI riêng',
+      'Linh kiện thụ động 0402, 151 linh kiện trên hai mặt',
+    ],
+    render: { src: `${PX4}/revb-iso-top.webp`, alt: 'Ảnh render 3D mạch PX4 bản B nhìn chéo từ trên' },
+    inset: {
+      src: `${PX4}/revb-iso-bottom.webp`,
+      alt: 'Ảnh render mặt dưới mạch PX4 bản B với cổng motor và thẻ nhớ',
+      caption: 'Mặt dưới, 93 linh kiện',
+      fit: 'contain',
+    },
+    cornerRadius: '7.5%',
+    model: { src: `${PX4}/fmu-rev-b.glb`, sizeLabel: '2 MB', note: 'Tụ 0402 hiện dạng khối hộp vì chưa gán mô hình 3D' },
+    layers: [
+      { id: 'l1', name: 'Top', role: 'Linh kiện và đường tín hiệu', kind: 'signal', src: `${PX4}/revb-l1-top.webp` },
+      { id: 'l2', name: 'GND', role: 'Mặt đất liền cho lớp Top', kind: 'ground', src: `${PX4}/revb-l2-gnd.webp` },
+      { id: 'l3', name: 'Signal', role: 'Đường tín hiệu bên trong', kind: 'signal', src: `${PX4}/revb-l3-signal.webp` },
+      { id: 'l4', name: 'Power', role: '+5 V, +3,3 V cho MCU và +3,3 V cho cảm biến', kind: 'power', src: `${PX4}/revb-l4-power.webp` },
+      { id: 'l5', name: 'GND', role: 'Mặt đất liền cho lớp Bottom', kind: 'ground', src: `${PX4}/revb-l5-gnd.webp` },
+      { id: 'l6', name: 'Bottom', role: 'Linh kiện mặt dưới và đường tín hiệu', kind: 'signal', src: `${PX4}/revb-l6-bottom.webp` },
+    ],
   },
 ]
 

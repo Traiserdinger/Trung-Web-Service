@@ -27,7 +27,7 @@ export default function App() {
     <div className="min-h-screen bg-studio text-ink">
       <a
         href="#bao-gia"
-        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:rounded-full focus:bg-ink focus:px-4 focus:py-2 focus:text-white"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:rounded-full focus:bg-ink focus:px-4 focus:py-2 focus:text-on-ink"
       >
         Tới phần báo giá in 3D
       </a>

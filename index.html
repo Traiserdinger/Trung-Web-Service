@@ -5,6 +5,18 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#F7F8F6" />
+    <script>
+      // Đặt theme trước khi vẽ để không chớp trắng: lựa chọn đã lưu, nếu chưa có thì theo hệ điều hành
+      ;(function () {
+        var t = null
+        try {
+          t = localStorage.getItem('theme')
+        } catch (e) {}
+        if (t !== 'light' && t !== 'dark') t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+        document.documentElement.dataset.theme = t
+        document.querySelector('meta[name="theme-color"]').content = t === 'dark' ? '#101815' : '#F7F8F6'
+      })()
+    </script>
     <meta
       name="description"
       content="Nguyễn Đức Trung nhận thiết kế mạch PCB (Altium, Allegro), firmware, gia công và hàn mạch, in 3D vỏ hộp khớp mạch. Báo giá in 3D tức thì từ file STL."

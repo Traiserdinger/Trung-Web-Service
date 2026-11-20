@@ -1,5 +1,6 @@
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js'
 import { analyzeMesh, orientZUpToYUp, scalePositions, type MeshStats } from './meshAnalysis'
+import { applyDown, findBestDown } from './orientation'
 
 export class StlParseError extends Error {}
 
@@ -27,8 +28,18 @@ function binaryFallback(buffer: ArrayBuffer): Float32Array | null {
   return parsePositions(buffer.slice(0, expected))
 }
 
-/** Parse STL (binary hoặc ASCII) → scale → đổi trục Z-up sang Y-up → phân tích. */
-export function processStl(buffer: ArrayBuffer, scale = 1): { positions: Float32Array; stats: MeshStats } {
+export interface ProcessedStl {
+  positions: Float32Array
+  stats: MeshStats
+  /** true khi đã xoay khác hướng gốc của file */
+  rotated: boolean
+}
+
+/**
+ * Parse STL (binary hoặc ASCII) → scale → đổi trục Z-up sang Y-up → (tuỳ chọn) tự xoay hướng in
+ * tốt nhất → phân tích.
+ */
+export function processStl(buffer: ArrayBuffer, scale = 1, autoOrient = false): ProcessedStl {
   let raw: Float32Array
   try {
     raw = parsePositions(buffer)
@@ -40,6 +51,12 @@ export function processStl(buffer: ArrayBuffer, scale = 1): { positions: Float32
   for (let i = 0; i < raw.length; i++) if (!Number.isFinite(raw[i])) throw new StlParseError(NOT_FINITE)
 
   const scaled = scale === 1 ? raw : scalePositions(raw, scale)
-  const positions = orientZUpToYUp(scaled)
-  return { positions, stats: analyzeMesh(positions) }
+  let positions = orientZUpToYUp(scaled)
+  let rotated = false
+  if (autoOrient) {
+    const best = findBestDown(positions)
+    rotated = best.down[1] > -0.99999
+    if (rotated) positions = applyDown(positions, best.down)
+  }
+  return { positions, stats: analyzeMesh(positions), rotated }
 }

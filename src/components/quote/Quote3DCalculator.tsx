@@ -1,9 +1,11 @@
-import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { materials, printerConfig, uiOptions } from '../../config/pricingConfig'
-import { parseStlInWorker } from '../../lib/stlWorkerClient'
+import { orientInWorker, parseStlInWorker, type WorkerResult } from '../../lib/stlWorkerClient'
+import { useTheme } from '../../lib/theme'
 import { formatDims } from '../../utils/format'
 import { generateOrderCode } from '../../utils/orderCode'
 import { exceedsBed, isSuspectedInches, type MeshStats } from '../../utils/meshAnalysis'
+import type { Vec3 } from '../../utils/orientation'
 import { computeQuoteState } from '../../utils/quoteState'
 import { shouldSuggestSupport, type PrintSettings } from '../../utils/slicerEstimator'
 import { DropZone, type DropZoneHandle } from './DropZone'
@@ -22,7 +24,14 @@ interface Loaded {
   scale: number
   /** Một mã đơn cho mỗi file nạp vào: đóng rồi mở lại form vẫn giữ mã */
   orderCode: string
+  /** auto: tự chọn hướng in; file: giữ hướng gốc của file; face: khách chọn mặt đặt xuống bàn */
+  orient: OrientMode
+  /** Hướng hiển thị khác hướng gốc của file */
+  rotated: boolean
 }
+
+type OrientMode = 'auto' | 'file' | 'face'
+
 
 function Notice({ tone, children }: { tone: 'alert' | 'caution'; children: ReactNode }) {
   const cls = tone === 'alert' ? 'bg-alert-tint text-alert' : 'bg-caution-tint text-caution'
@@ -44,7 +53,13 @@ export function Quote3DCalculator() {
   /** Tăng để dựng lại form với mã đơn mới */
   const [formKey, setFormKey] = useState(0)
   const [settings, setSettings] = useState<PrintSettings>({ ...uiOptions.defaults, support: false })
+  const [picking, setPicking] = useState(false)
+  const [theme] = useTheme()
   const sendingRef = useRef(false)
+  const loadedRef = useRef<Loaded | null>(null)
+  useEffect(() => {
+    loadedRef.current = loaded
+  }, [loaded])
   const onBusyChange = useCallback((busy: boolean) => {
     sendingRef.current = busy
     setSending(busy)
@@ -58,11 +73,19 @@ export function Quote3DCalculator() {
   }
 
   /** req: số thứ tự yêu cầu đã cấp khi khách chọn file (để bỏ kết quả của lần chọn cũ hơn) */
-  const load = async (file: File, buffer: ArrayBuffer, scale: number, req = ++requestRef.current) => {
+  const load = async (
+    file: File,
+    buffer: ArrayBuffer,
+    scale: number,
+    req = ++requestRef.current,
+    orient: OrientMode = 'auto',
+    job?: () => Promise<WorkerResult>,
+  ) => {
     setLoading(true)
     setError(null)
+    setPicking(false)
     try {
-      const { positions, stats } = await parseStlInWorker(buffer, scale)
+      const { positions, stats, rotated } = await (job ? job() : parseStlInWorker(buffer, scale, orient === 'auto'))
       if (req !== requestRef.current) return // đã có file mới hơn
       setLoaded((prev) => ({
         file,
@@ -70,8 +93,10 @@ export function Quote3DCalculator() {
         positions,
         stats,
         scale,
-        // đổi đơn vị inch vẫn là cùng một file → giữ mã đơn
+        // đổi đơn vị inch hay xoay hướng in vẫn là cùng một file → giữ mã đơn
         orderCode: prev && prev.file === file ? prev.orderCode : generateOrderCode(),
+        orient,
+        rotated: job ? rotated || (prev?.rotated ?? false) : Boolean(rotated),
       }))
       setSettings((s) => ({ ...s, support: shouldSuggestSupport(stats) }))
       // Form đang mở cho file cũ thì đóng lại — trừ khi đơn đó đang gửi dở (form giữ đúng file đã gửi)
@@ -115,6 +140,15 @@ export function Quote3DCalculator() {
     await load(file, buffer, 1, req)
   }
 
+  /** Đổi hướng in của file đang mở. Đơn đã gửi giữ nguyên; hướng mới là đơn mới. */
+  const reorient = (mode: OrientMode, down?: Vec3) => {
+    const cur = loadedRef.current
+    if (!cur || sendingRef.current) return
+    if (sent) startNewOrder(false)
+    const job = mode === 'face' && down ? () => orientInWorker(cur.positions, down) : undefined
+    void load(cur.file, cur.buffer, cur.scale, ++requestRef.current, mode, job)
+  }
+
   const onSettingsChange = (s: PrintSettings) => {
     setSettings(s)
     if (sent) startNewOrder(false) // đơn đã gửi giữ nguyên; thông số mới là đơn mới
@@ -140,7 +174,17 @@ export function Quote3DCalculator() {
               color={materials[settings.material].color}
               overflow={overflow}
               bed={bed}
+              dark={theme === 'dark'}
+              pickFace={picking}
+              onPickFace={(down) => reorient('face', down)}
+              onCancelPick={() => setPicking(false)}
             />
+
+            {picking && (
+              <div className="pointer-events-none absolute top-16 left-1/2 -translate-x-1/2 rounded-full bg-ink px-4 py-2 text-[13px] font-semibold whitespace-nowrap text-on-ink shadow-lg">
+                Bấm vào mặt muốn đặt xuống bàn. Esc để huỷ.
+              </div>
+            )}
 
             {/* Thanh trên: tên file + đổi file */}
             {loaded && (
@@ -162,19 +206,60 @@ export function Quote3DCalculator() {
             {/* Thanh dưới: kích thước + đặt lại góc nhìn */}
             <div className="absolute right-4 bottom-4 left-4 flex flex-wrap items-end justify-between gap-3">
               <div className="rounded-[14px] bg-paper/90 px-3.5 py-2 ring-1 ring-mist backdrop-blur">
-                <div className="text-[12px] text-slate">{stats ? 'Kích thước mô hình' : `Bàn in ${printerConfig.name}`}</div>
+                <div className="text-[12px] text-slate">{stats ? 'Kích thước khi in' : `Bàn in ${printerConfig.name}`}</div>
                 <div className={`text-[15px] font-semibold tnum ${overflow ? 'text-alert' : 'text-ink'}`}>
                   {formatDims(stats ? stats.dims : { length: bed.x, width: bed.y, height: bed.z })}
                 </div>
+                {loaded && loaded.orient === 'auto' && loaded.rotated && (
+                  <div className="text-[12px] text-solder">Đã tự xoay sang hướng dễ in</div>
+                )}
               </div>
               {loaded && (
-                <button
-                  type="button"
-                  onClick={() => viewerRef.current?.resetView()}
-                  className="rounded-full bg-paper/90 px-3.5 py-2 text-[13px] font-semibold text-ink ring-1 ring-mist backdrop-blur transition-colors hover:ring-ink"
-                >
-                  Đặt lại góc nhìn
-                </button>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <div role="group" aria-label="Hướng in" className="flex rounded-full bg-paper/90 p-1 ring-1 ring-mist backdrop-blur">
+                    {(
+                      [
+                        ['auto', 'Tự xoay', 'Tự chọn hướng in ít support, mặt đáy bám bàn rộng nhất'],
+                        ['face', 'Chọn mặt đáy', 'Bấm vào một mặt của mô hình để đặt mặt đó xuống bàn'],
+                        ['file', 'Như file', 'Giữ nguyên hướng trong file STL'],
+                      ] as const
+                    ).map(([mode, label, hint]) => {
+                      const on = mode === 'face' ? picking || (loaded.orient === 'face' && !picking) : !picking && loaded.orient === mode
+                      return (
+                        <button
+                          key={mode}
+                          type="button"
+                          title={hint}
+                          aria-pressed={on}
+                          disabled={loading || sending}
+                          onClick={() => {
+                            if (mode === 'face') setPicking((v) => !v)
+                            else if (loaded.orient !== mode || picking) {
+                              setPicking(false)
+                              if (loaded.orient !== mode) reorient(mode)
+                            }
+                          }}
+                          className={`rounded-full px-3 py-1.5 text-[13px] transition-colors disabled:opacity-60 ${
+                            on ? 'bg-ink font-semibold text-on-ink' : 'text-ink hover:bg-fog'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => viewerRef.current?.resetView()}
+                    aria-label="Đặt lại góc nhìn"
+                    title="Đặt lại góc nhìn"
+                    className="grid h-10 w-10 place-items-center rounded-full bg-paper/90 text-ink ring-1 ring-mist backdrop-blur transition-colors hover:ring-ink"
+                  >
+                    <svg viewBox="0 0 20 20" className="h-4 w-4" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M4 10a6 6 0 1 0 1.8-4.3M4 3.5v3h3" />
+                    </svg>
+                  </button>
+                </div>
               )}
             </div>
 
@@ -206,8 +291,8 @@ export function Quote3DCalculator() {
               <span className="flex gap-2">
                 <button
                   type="button"
-                  className="rounded-full bg-caution px-3 py-1 text-[13px] font-semibold text-white"
-                  onClick={() => load(loaded.file, loaded.buffer, INCH)}
+                  className="rounded-full bg-caution px-3 py-1 text-[13px] font-semibold text-caution-tint"
+                  onClick={() => load(loaded.file, loaded.buffer, INCH, undefined, loaded.orient === 'file' ? 'file' : 'auto')}
                 >
                   Đổi sang mm
                 </button>

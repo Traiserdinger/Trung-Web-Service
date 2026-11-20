@@ -76,7 +76,7 @@ export const DropZone = forwardRef<DropZoneHandle, Props>(function DropZone({ on
                 type="button"
                 onClick={open}
                 disabled={disabled}
-                className="mt-4 rounded-full bg-ink px-5 py-2.5 text-[14px] font-semibold text-white transition-colors hover:bg-solder disabled:opacity-60"
+                className="mt-4 rounded-full bg-ink px-5 py-2.5 text-[14px] font-semibold text-on-ink transition-colors hover:bg-solder disabled:opacity-60"
               >
                 Chọn file từ máy
               </button>
