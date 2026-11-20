@@ -7,6 +7,8 @@ interface Props {
   onChange(s: PrintSettings): void
   /** Lý do tự bật support, ví dụ "Phát hiện ~3.0 cm² mặt treo" */
   supportReason: string | null
+  /** Khoá khi đang gửi đơn, để màn hình luôn khớp với đơn đã gửi */
+  disabled?: boolean
 }
 
 function Group({ label, children, id }: { label: string; children: ReactNode; id: string }) {
@@ -50,12 +52,12 @@ function Segmented<T extends string | number>(p: {
   )
 }
 
-export function OptionsPanel({ value, onChange, supportReason }: Props) {
+export function OptionsPanel({ value, onChange, supportReason, disabled }: Props) {
   const set = (patch: Partial<PrintSettings>) => onChange({ ...value, ...patch })
   const { min, max } = uiOptions.quantity
 
   return (
-    <div className="space-y-6">
+    <fieldset disabled={disabled} className="min-w-0 space-y-6 disabled:opacity-60">
       <Group label="Nhựa" id="opt-material">
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-2">
           {(Object.keys(materials) as MaterialId[]).map((id) => {
@@ -177,6 +179,6 @@ export function OptionsPanel({ value, onChange, supportReason }: Props) {
           </div>
         </div>
       </div>
-    </div>
+    </fieldset>
   )
 }

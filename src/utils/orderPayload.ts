@@ -15,8 +15,22 @@ export interface CustomerInfo {
 
 export type CustomerErrors = Partial<Record<'name' | 'phone' | 'email' | 'consent', string>>
 
+/**
+ * Chuẩn hoá SĐT Việt Nam về dạng 0xxxxxxxxx. Nhận các cách viết hay gặp:
+ * "0913 014 605", "+84 913.014.605", "(+84) 913…", "+84 (0) 913…", "+84 0913…", "84913014605".
+ * Trả null nếu không phải số di động/cố định 10 chữ số.
+ */
+export function normalizeVnPhone(p: string): string | null {
+  let s = p.replace(/[\s.\-()]/g, '')
+  if (s.startsWith('+84')) s = s.slice(3)
+  else if (s.startsWith('84') && (s.length === 11 || s.length === 12)) s = s.slice(2)
+  else if (!s.startsWith('0')) return null
+  if (!s.startsWith('0')) s = '0' + s
+  return /^0\d{9}$/.test(s) ? s : null
+}
+
 export function isValidVnPhone(p: string): boolean {
-  return /^(0|\+84)\d{9}$/.test(p.replace(/[\s.-]/g, ''))
+  return normalizeVnPhone(p) !== null
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -47,6 +61,10 @@ export interface OrderPayload {
   fileName: string
   fileSize: number
   fileBase64: string
+  /** 'zalo' khi file quá lớn để gửi qua web: đơn vẫn được ghi, khách gửi file qua Zalo */
+  fileDelivery: 'upload' | 'zalo'
+  /** Hệ số đã nhân vào file khi báo giá (25.4 nếu khách đổi inch → mm) */
+  scale: number
   turnstileToken: string | null
   honeypot: string
   createdAt: string
@@ -61,6 +79,8 @@ export function buildOrderPayload(a: {
   fileName: string
   fileSize: number
   fileBase64: string
+  fileDelivery?: 'upload' | 'zalo'
+  scale?: number
   turnstileToken: string | null
   now?: Date
 }): OrderPayload {
@@ -81,7 +101,7 @@ export function buildOrderPayload(a: {
     consultReasons: quote.consultReasons,
     customer: {
       name: a.customer.name.trim(),
-      phone: a.customer.phone.trim(),
+      phone: normalizeVnPhone(a.customer.phone) ?? a.customer.phone.trim(),
       email: a.customer.email.trim(),
       note: a.customer.note.trim(),
     },
@@ -93,6 +113,8 @@ export function buildOrderPayload(a: {
     fileName: a.fileName,
     fileSize: a.fileSize,
     fileBase64: a.fileBase64,
+    fileDelivery: a.fileDelivery ?? 'upload',
+    scale: a.scale ?? 1,
     turnstileToken: a.turnstileToken,
     honeypot: a.customer.honeypot,
     createdAt: (a.now ?? new Date()).toISOString(),

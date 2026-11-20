@@ -42,6 +42,10 @@ export const DropZone = forwardRef<DropZoneHandle, Props>(function DropZone({ on
         className="relative"
         onDragOver={(e) => {
           e.preventDefault()
+          if (disabled) {
+            if (e.dataTransfer) e.dataTransfer.dropEffect = 'none'
+            return
+          }
           setOver(true)
         }}
         onDragLeave={(e) => {
@@ -50,7 +54,11 @@ export const DropZone = forwardRef<DropZoneHandle, Props>(function DropZone({ on
         onDrop={(e) => {
           e.preventDefault()
           setOver(false)
-          if (!disabled) accept(e.dataTransfer.files[0])
+          if (disabled) {
+            setError('Đang xử lý file hoặc gửi đơn. Đợi xong rồi hãy thả file mới.')
+            return
+          }
+          accept(e.dataTransfer.files[0])
         }}
       >
         {children}
@@ -85,7 +93,8 @@ export const DropZone = forwardRef<DropZoneHandle, Props>(function DropZone({ on
       <input
         ref={inputRef}
         type="file"
-        accept=".stl"
+        // iOS Safari chỉ nhận đuôi file khi kèm cả kiểu MIME, nếu không sẽ làm mờ file .stl
+        accept=".stl,model/stl,application/sla,application/vnd.ms-pki.stl,application/octet-stream"
         className="hidden"
         onChange={(e) => {
           accept(e.target.files?.[0])

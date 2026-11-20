@@ -39,10 +39,23 @@ export function Quote3DCalculator() {
   const [inchDismissed, setInchDismissed] = useState(false)
   const [showOrder, setShowOrder] = useState(false)
   const [sending, setSending] = useState(false)
+  /** Đơn hiện tại đã gửi xong: đổi thông số hay bấm gửi lại nghĩa là bắt đầu một đơn mới */
+  const [sent, setSent] = useState(false)
+  /** Tăng để dựng lại form với mã đơn mới */
+  const [formKey, setFormKey] = useState(0)
   const [settings, setSettings] = useState<PrintSettings>({ ...uiOptions.defaults, support: false })
+  const sendingRef = useRef(false)
+  sendingRef.current = sending
 
-  const load = async (file: File, buffer: ArrayBuffer, scale: number) => {
-    const req = ++requestRef.current
+  const startNewOrder = (open: boolean) => {
+    setLoaded((prev) => (prev ? { ...prev, orderCode: generateOrderCode() } : prev))
+    setSent(false)
+    setFormKey((k) => k + 1)
+    setShowOrder(open)
+  }
+
+  /** req: số thứ tự yêu cầu đã cấp khi khách chọn file (để bỏ kết quả của lần chọn cũ hơn) */
+  const load = async (file: File, buffer: ArrayBuffer, scale: number, req = ++requestRef.current) => {
     setLoading(true)
     setError(null)
     try {
@@ -58,18 +71,50 @@ export function Quote3DCalculator() {
         orderCode: prev && prev.file === file ? prev.orderCode : generateOrderCode(),
       }))
       setSettings((s) => ({ ...s, support: shouldSuggestSupport(stats) }))
+      // Form đang mở cho file cũ thì đóng lại — trừ khi đơn đó đang gửi dở (form giữ đúng file đã gửi)
+      if (!sendingRef.current) {
+        setShowOrder(false)
+        setSent(false)
+      }
     } catch (e) {
       if (req !== requestRef.current) return
-      setError(e instanceof Error ? e.message : 'Không đọc được file STL')
+      const reason = e instanceof Error ? e.message : 'File STL không hợp lệ'
+      setError(`Không đọc được "${file.name}": ${reason}`)
+      // File mới lỗi thì không để file cũ tiếp tục đứng như file đang đặt
+      setLoaded((prev) => (prev && prev.file === file ? prev : null))
+      if (!sendingRef.current) setShowOrder(false)
     } finally {
       if (req === requestRef.current) setLoading(false)
     }
   }
 
   const onFile = async (file: File) => {
+    if (sendingRef.current) {
+      setError('Đang gửi đơn. Đợi gửi xong rồi hãy chọn file mới.')
+      return
+    }
+    const req = ++requestRef.current // cấp số ngay, trước khi đọc file, để hai lần chọn nhanh không về sai thứ tự
     setInchDismissed(false)
     setShowOrder(false)
-    await load(file, await file.arrayBuffer(), 1)
+    setLoading(true)
+    setError(null)
+    let buffer: ArrayBuffer
+    try {
+      buffer = await file.arrayBuffer()
+    } catch {
+      if (req !== requestRef.current) return
+      setError(`Không đọc được "${file.name}" trên máy. Hãy kiểm tra file rồi chọn lại.`)
+      setLoaded(null)
+      setLoading(false)
+      return
+    }
+    if (req !== requestRef.current) return
+    await load(file, buffer, 1, req)
+  }
+
+  const onSettingsChange = (s: PrintSettings) => {
+    setSettings(s)
+    if (sent) startNewOrder(false) // đơn đã gửi giữ nguyên; thông số mới là đơn mới
   }
 
   const stats = loaded?.stats ?? null
@@ -174,17 +219,22 @@ export function Quote3DCalculator() {
 
       {/* Tuỳ chọn + phiếu tạm tính */}
       <div className="col-span-12 space-y-7 lg:col-span-5">
-        <OptionsPanel value={settings} onChange={setSettings} supportReason={supportReason} />
-        <QuoteResult quote={quote} stats={stats} onSubmit={() => setShowOrder(true)} />
+        <OptionsPanel value={settings} onChange={onSettingsChange} supportReason={supportReason} disabled={sending} />
+        <QuoteResult quote={quote} stats={stats} onSubmit={() => (sent ? startNewOrder(true) : setShowOrder(true))} />
         {showOrder && loaded && quote && (
           <OrderForm
+            key={formKey}
             quote={quote}
             stats={loaded.stats}
             settings={settings}
             file={loaded.file}
+            fileBuffer={loaded.buffer}
+            scale={loaded.scale}
             orderCode={loaded.orderCode}
             onClose={() => setShowOrder(false)}
             onBusyChange={setSending}
+            onSent={() => setSent(true)}
+            onNewOrder={() => startNewOrder(true)}
           />
         )}
       </div>

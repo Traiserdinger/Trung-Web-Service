@@ -92,14 +92,50 @@ describe('OrderForm', () => {
     expect(codes).toEqual([CODE, CODE])
   })
 
-  it('does not upload files over 35 MB and points to Zalo instead', () => {
-    const submit = vi.fn()
+  it('records an order without the file when it is over 35 MB, for a Zalo hand-off', async () => {
+    const submit = vi.fn(async (p: OrderPayload) => ({ orderCode: p.orderCode }))
     const big = file()
     Object.defineProperty(big, 'size', { value: 36 * 1024 * 1024 })
     setup(submit, big)
     expect(screen.getByText(/gửi file qua Zalo/)).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Gửi đơn' })).not.toBeInTheDocument()
+    await fillValid()
+    await userEvent.click(screen.getByRole('button', { name: 'Gửi đơn' }))
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1))
+    const p = submit.mock.calls[0][0] as OrderPayload
+    expect(p).toMatchObject({ fileDelivery: 'zalo', fileBase64: '', orderCode: CODE })
+  })
+
+  it('announces success in a focused status panel showing the sent code', async () => {
+    setup(vi.fn(async (p: OrderPayload) => ({ orderCode: p.orderCode })))
+    await fillValid()
+    await userEvent.click(screen.getByRole('button', { name: 'Gửi đơn' }))
+    const status = await screen.findByRole('status')
+    expect(status).toHaveTextContent(CODE)
+    expect(status).toHaveFocus()
+  })
+
+  it('ties field errors to their inputs', async () => {
+    setup(vi.fn())
+    await userEvent.click(screen.getByRole('button', { name: 'Gửi đơn' }))
+    const name = screen.getByLabelText(/Họ tên/)
+    expect(name).toHaveAttribute('aria-invalid', 'true')
+    expect(name).toHaveAccessibleDescription('Vui lòng nhập họ tên')
+  })
+
+  it('blames the local file, not the network, when the file cannot be read', async () => {
+    const submit = vi.fn()
+    const unreadable = file()
+    Object.defineProperty(unreadable, 'size', { value: 10 })
+    vi.spyOn(FileReader.prototype, 'readAsDataURL').mockImplementation(function (this: FileReader) {
+      queueMicrotask(() => this.onerror?.(new ProgressEvent('error') as ProgressEvent<FileReader>))
+    })
+    setup(submit, unreadable)
+    await fillValid()
+    await userEvent.click(screen.getByRole('button', { name: 'Gửi đơn' }))
+    const alert = await screen.findByRole('alert')
     expect(submit).not.toHaveBeenCalled()
+    expect(alert).toHaveTextContent(/Không đọc được file/)
+    vi.restoreAllMocks()
   })
 
   it('locks the close button and reports busy while sending', async () => {
