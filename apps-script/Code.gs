@@ -1,12 +1,12 @@
 /**
- * Nhận đơn in 3D từ website → lưu Google Drive → báo Telegram + Gmail.
+ * Nhận đơn in 3D từ website → lưu Google Drive → báo qua Gmail (và Telegram nếu có cấu hình).
  *
  * Deploy: Web app, Execute as "Me", Who has access "Anyone".
  * Script Properties (Project Settings → Script properties):
- *   TELEGRAM_BOT_TOKEN  token bot từ @BotFather
- *   TELEGRAM_CHAT_ID    chat id của Trung
  *   DRIVE_FOLDER_ID     1EIxvJZqVhZ8Y8Zp3JmoKgIIpM-Jrokh5
- *   OWNER_EMAIL         minhlaductrung@gmail.com
+ *   OWNER_EMAIL         minhlaductrung@gmail.com  (nhận email báo đơn)
+ *   TELEGRAM_BOT_TOKEN  (tuỳ chọn) bỏ trống = không gửi Telegram
+ *   TELEGRAM_CHAT_ID    (tuỳ chọn)
  *   TURNSTILE_SECRET    (tuỳ chọn) secret key Cloudflare Turnstile
  *
  * Hướng dẫn chi tiết: docs/setup-apps-script.md
