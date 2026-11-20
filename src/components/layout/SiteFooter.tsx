@@ -7,7 +7,7 @@ const formatPhone = (p: string) => p.replace(/^(\d{4})(\d{3})(\d{3})$/, '$1 $2 $
 export function SiteFooter() {
   const c = contactConfig
   return (
-    <footer id="lien-he" className="bg-ink text-white">
+    <footer id="lien-he" className="on-dark bg-ink text-white">
       <div className="mx-auto max-w-[1200px] px-4 pt-24 pb-10 sm:px-6 lg:pt-32">
         <h2 className="max-w-[18ch] text-[clamp(36px,5vw,64px)] font-bold">{contact.title}</h2>
         <p className="mt-5 max-w-[52ch] text-[18px] leading-[1.65] text-white/70">{contact.body}</p>

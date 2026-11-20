@@ -60,6 +60,11 @@
     border-radius: 6px;
   }
 
+  /* Trên nền tối (footer) viền xanh chỉ đạt 2,6:1 — dùng viền trắng (> 14:1) */
+  .on-dark :focus-visible {
+    outline-color: #ffffff;
+  }
+
   ::selection {
     background: var(--color-solder-tint);
     color: var(--color-ink);

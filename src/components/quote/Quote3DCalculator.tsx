@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
 import { materials, printerConfig, uiOptions } from '../../config/pricingConfig'
 import { parseStlInWorker } from '../../lib/stlWorkerClient'
 import { formatDims } from '../../utils/format'
@@ -45,7 +45,10 @@ export function Quote3DCalculator() {
   const [formKey, setFormKey] = useState(0)
   const [settings, setSettings] = useState<PrintSettings>({ ...uiOptions.defaults, support: false })
   const sendingRef = useRef(false)
-  sendingRef.current = sending
+  const onBusyChange = useCallback((busy: boolean) => {
+    sendingRef.current = busy
+    setSending(busy)
+  }, [])
 
   const startNewOrder = (open: boolean) => {
     setLoaded((prev) => (prev ? { ...prev, orderCode: generateOrderCode() } : prev))
@@ -232,7 +235,7 @@ export function Quote3DCalculator() {
             scale={loaded.scale}
             orderCode={loaded.orderCode}
             onClose={() => setShowOrder(false)}
-            onBusyChange={setSending}
+            onBusyChange={onBusyChange}
             onSent={() => setSent(true)}
             onNewOrder={() => startNewOrder(true)}
           />

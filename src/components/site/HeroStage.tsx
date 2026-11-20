@@ -71,6 +71,8 @@ export function HeroStage() {
         <button
           type="button"
           onClick={toggle}
+          // Ẩn trong lúc intro thì cũng không được bấm/tab tới
+          disabled={!ready}
           aria-pressed={exploded}
           className="flex items-center gap-2 rounded-full border border-mist bg-paper/90 px-4 py-2 text-[14px] font-semibold text-ink shadow-[0_1px_0_rgb(27_36_32/0.04)] backdrop-blur transition-colors hover:border-solder hover:text-solder"
         >
@@ -81,7 +83,8 @@ export function HeroStage() {
               <path d="M4 4h12M4 10h12M4 16h12" strokeLinecap="round" />
             )}
           </svg>
-          {exploded ? 'Lắp lại' : 'Tách lớp'}
+          {/* Tên cố định; trạng thái do aria-pressed và biểu tượng thể hiện */}
+          Tách lớp
         </button>
         {finePointer && <span className="hidden text-[13px] text-slate sm:inline">Kéo để xoay</span>}
       </div>

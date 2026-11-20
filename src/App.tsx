@@ -1,12 +1,26 @@
+import { lazy, Suspense } from 'react'
 import { FloatingZalo } from './components/layout/FloatingZalo'
 import { SiteFooter } from './components/layout/SiteFooter'
-import { Quote3DCalculator } from './components/quote/Quote3DCalculator'
 import { Hero } from './components/site/Hero'
 import { Nav } from './components/site/Nav'
 import { Process } from './components/site/Process'
 import { Projects } from './components/site/Projects'
 import { Services } from './components/site/Services'
 import { printerConfig } from './config/pricingConfig'
+
+// three.js + bộ đọc STL chỉ tải khi tới phần báo giá, để chữ hero hiện ngay
+const Quote3DCalculator = lazy(() =>
+  import('./components/quote/Quote3DCalculator').then((m) => ({ default: m.Quote3DCalculator })),
+)
+
+function CalculatorFallback() {
+  return (
+    <div className="grid grid-cols-12 gap-8" aria-busy="true" aria-label="Đang tải phần báo giá">
+      <div className="stage-dots col-span-12 h-[380px] animate-pulse rounded-[28px] ring-1 ring-mist sm:h-[520px] lg:col-span-7 lg:h-[600px]" />
+      <div className="col-span-12 h-[420px] animate-pulse rounded-[22px] bg-fog lg:col-span-5" />
+    </div>
+  )
+}
 
 export default function App() {
   return (
@@ -33,7 +47,9 @@ export default function App() {
             </p>
           </div>
           <div className="mt-12">
-            <Quote3DCalculator />
+            <Suspense fallback={<CalculatorFallback />}>
+              <Quote3DCalculator />
+            </Suspense>
           </div>
         </section>
         <Process />

@@ -266,7 +266,10 @@ export function createEnclosureScene(host: HTMLElement, opts: EnclosureSceneOpti
   renderer.toneMapping = THREE.NeutralToneMapping
   renderer.toneMappingExposure = 1.05
   renderer.shadowMap.enabled = true
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap
+  renderer.shadowMap.type = THREE.PCFShadowMap
+  // Bóng chỉ cần tính lại khi các phần dịch chuyển (xoay camera không đổi bóng)
+  renderer.shadowMap.autoUpdate = false
+  renderer.shadowMap.needsUpdate = true
   renderer.domElement.style.display = 'block'
   host.appendChild(renderer.domElement)
 
@@ -523,14 +526,17 @@ export function createEnclosureScene(host: HTMLElement, opts: EnclosureSceneOpti
   controls.maxPolarAngle = Math.PI * 0.46
   // Không tự xoay: chuyển động duy nhất không do người dùng là khoảnh khắc lắp ráp lúc tải trang.
   controls.enabled = opts.interactive
-  if (!opts.interactive) renderer.domElement.style.touchAction = 'pan-y'
+  // Màn cảm ứng: không xoay được thì trả lại cuộn và pinch-zoom cho trình duyệt
+  if (!opts.interactive) renderer.domElement.style.touchAction = 'auto'
   controls.update()
 
   // ---- Hoạt cảnh tách / lắp ----
   let explode = opts.reducedMotion ? 0 : 1 // 1 = tách, 0 = lắp
   let from = explode
   let to = 0
-  let animStart = performance.now() + (opts.reducedMotion ? 0 : 700)
+  // Đồng hồ intro bắt đầu ở khung hình đầu tiên NHÌN THẤY được (tab nền / deep link vẫn xem được màn lắp)
+  let animStart: number | null = opts.reducedMotion ? 0 : null
+  let dirty = true
   const DURATION = opts.reducedMotion ? 1 : 1600
   let firstAssembledFired = false
   const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
@@ -552,18 +558,26 @@ export function createEnclosureScene(host: HTMLElement, opts: EnclosureSceneOpti
   }
   applyExplode(explode)
 
-  const step = (now: number) => {
+  const markAssembledOnce = () => {
+    if (firstAssembledFired) return
+    firstAssembledFired = true
+    setLabelsVisible(true)
+    opts.onFirstAssembled?.()
+  }
+
+  /** Trả true khi có chuyển động cần vẽ lại */
+  const step = (now: number): boolean => {
+    if (animStart === null) animStart = now + 700
     if (now >= animStart && explode !== to) {
       const t = Math.min(1, (now - animStart) / DURATION)
       explode = from + (to - from) * easeInOut(t)
       if (t >= 1) explode = to
       applyExplode(explode)
-      if (explode === 0 && !firstAssembledFired) {
-        firstAssembledFired = true
-        setLabelsVisible(true)
-        opts.onFirstAssembled?.()
-      }
+      renderer.shadowMap.needsUpdate = true
+      if (explode === 0) markAssembledOnce()
+      return true
     }
+    return now < animStart // còn chờ bắt đầu intro: vẽ trạng thái tách sẵn
   }
   if (opts.reducedMotion) {
     firstAssembledFired = true
@@ -585,31 +599,45 @@ export function createEnclosureScene(host: HTMLElement, opts: EnclosureSceneOpti
     const aspect = w / h
     camera.zoom = aspect < 0.9 ? 0.78 : aspect < 1.2 ? 0.98 : 1.14
     camera.updateProjectionMatrix()
+    dirty = true
   }
   const ro = new ResizeObserver(resize)
   ro.observe(host)
   resize()
 
   let visible = true
-  const io = new IntersectionObserver(([entry]) => (visible = entry.isIntersecting), { threshold: 0.01 })
+  const io = new IntersectionObserver(
+    ([entry]) => {
+      visible = entry.isIntersecting
+      if (visible) dirty = true
+    },
+    { threshold: 0.01 },
+  )
   io.observe(host)
 
   let frame = 0
   const loop = (now: number) => {
     frame = requestAnimationFrame(loop)
     if (!visible || document.hidden) return
-    step(now)
-    controls.update()
-    renderer.render(scene, camera)
-    labelRenderer.render(scene, camera)
+    const animating = step(now)
+    const moved = controls.update() // true khi đang xoay / còn quán tính damping
+    // Chỉ vẽ khi có gì thay đổi: đứng yên thì không tốn GPU (pin điện thoại)
+    if (animating || moved || dirty) {
+      dirty = false
+      renderer.render(scene, camera)
+      labelRenderer.render(scene, camera)
+    }
   }
   frame = requestAnimationFrame(loop)
 
   return {
     setExploded(v: boolean) {
+      // Bấm trong lúc intro: coi như intro đã xong để nút và nhãn không bị kẹt ẩn
+      markAssembledOnce()
       from = explode
       to = v ? 1 : 0
       animStart = performance.now()
+      dirty = true
     },
     dispose() {
       cancelAnimationFrame(frame)

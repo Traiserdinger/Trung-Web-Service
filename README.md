@@ -8,7 +8,7 @@ Web tĩnh cho phép khách thả file `.stl`, xem mô hình 3D trên bàn in Bam
 
 ## Chạy trên máy
 
-Cần Node.js 20 trở lên.
+Cần Node.js 24 LTS (từ 24.15) hoặc Node.js 26 trở lên, vì Vite 8, Vitest 5 và jsdom 31 không chạy trên bản cũ hơn. Cloudflare Pages đọc phiên bản từ file `.nvmrc`.
 
 ```powershell
 npm install

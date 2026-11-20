@@ -109,7 +109,7 @@ export const StlViewer = forwardRef<StlViewerHandle, StlViewerProps>(function St
     renderer.outputColorSpace = THREE.SRGBColorSpace
     renderer.toneMapping = THREE.NeutralToneMapping
     renderer.shadowMap.enabled = true
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    renderer.shadowMap.type = THREE.PCFShadowMap
     host.appendChild(renderer.domElement)
 
     const scene = new THREE.Scene()
