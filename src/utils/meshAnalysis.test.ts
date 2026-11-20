@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { flipWinding, makeBox, makeFlare, makeTShape, makeUvSphere, removeTriangles } from '../../tests/fixtures/meshes'
+import { concat, flipWinding, makeBox, makeFlare, makeTShape, makeUvSphere, removeTriangles } from '../../tests/fixtures/meshes'
 import { analyzeMesh, exceedsBed, isSuspectedInches, orientZUpToYUp } from './meshAnalysis'
 
 const analyze = (p: Float32Array) => analyzeMesh(orientZUpToYUp(p))
@@ -60,6 +60,17 @@ describe('meshAnalysis', () => {
     expect(s.signedVolume).toBeGreaterThan(0)
     // 4 mặt hình thang: (10 + 70) / 2 × √(30² + 20²)
     expect(s.overhangArea).toBeCloseTo(4 * 40 * Math.hypot(30, 20), 1)
+  })
+
+  it('a body with inverted winding next to a correct one keeps both volumes', () => {
+    const mixed = concat(makeBox(50, 50, 50), flipWinding(makeBox(50, 50, 50, [70, 0, 0])))
+    expect(analyze(mixed).volume).toBeCloseTo(250000, 0)
+  })
+
+  it('a single flipped face makes the mesh not watertight', () => {
+    const box = makeBox(10, 10, 10)
+    const flippedTop = concat(flipWinding(box.slice(0, 18)), box.slice(18))
+    expect(analyze(flippedTop).isWatertight).toBe(false)
   })
 
   it('inverted winding still gives positive volume and the same overhang', () => {

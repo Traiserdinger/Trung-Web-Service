@@ -45,4 +45,9 @@ describe('computeQuoteState', () => {
     expect(q.consultReasons).toEqual(['Vượt khổ: 210 × 90 × 40 mm'])
     expect(q.price).toBeNull()
   })
+
+  it('oversize reason rounds up so 180.3 mm never reads as 180', () => {
+    const q = computeQuoteState({ ...cube, dims: { length: 180.3, width: 90, height: 40 } }, settings)
+    expect(q.consultReasons).toEqual(['Vượt khổ: 180,3 × 90 × 40 mm'])
+  })
 })

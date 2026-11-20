@@ -34,7 +34,8 @@ export interface PrintEstimate {
 }
 
 export function countLayers(height: number, layerHeight: number): number {
-  return Math.max(1, Math.ceil(height / layerHeight - 1e-9))
+  // Dung sai 1e-4 lớp: lớn hơn nhiễu float32 của toạ độ STL, nhỏ hơn mọi chênh lệch có nghĩa
+  return Math.max(1, Math.ceil(height / layerHeight - 1e-4))
 }
 
 export function estimatePrint(
@@ -57,8 +58,12 @@ export function estimatePrint(
   // Thời gian tính từ thể tích chưa nhân support, rồi nhân support đúng một lần.
   const partTimeSec = (baseVolume / flow + layers * cfg.perLayerSec) * supportMul
 
-  const footprint = (stats.dims.length + cfg.platePaddingMm) * (stats.dims.width + cfg.platePaddingMm)
-  const copiesPerPlate = Math.max(1, Math.floor((bed.x * bed.y) / footprint))
+  // Xếp lưới thật trên bàn (số hàng × số cột vừa khổ), không chia theo diện tích:
+  // hai chi tiết 100×100 không thể nằm chung bàn 180×180 dù tổng diện tích nhỏ hơn.
+  const pad = cfg.platePaddingMm
+  const fit = (bedSide: number, part: number) => Math.floor((bedSide + pad) / (part + pad))
+  const grid = (l: number, w: number) => fit(bed.x, l) * fit(bed.y, w)
+  const copiesPerPlate = Math.max(1, grid(stats.dims.length, stats.dims.width), grid(stats.dims.width, stats.dims.length))
   const plates = Math.ceil(s.quantity / copiesPerPlate)
 
   return {

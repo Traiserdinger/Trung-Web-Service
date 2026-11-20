@@ -47,11 +47,17 @@ describe('estimatePrint', () => {
     expect(e.infillVolume).toBe(0)
   })
 
-  it('plates: 100×100 footprint fits 2 per plate, qty 3 needs 2 plates', () => {
+  it('plates: parts are packed on a grid, not by area (100×100 → 1 per plate)', () => {
     const big = { ...cube, dims: { length: 100, width: 100, height: 10 } }
     const e = estimatePrint(big, { ...base, quantity: 3 })
-    expect(e.copiesPerPlate).toBe(2)
-    expect(e.plates).toBe(2)
+    expect(e.copiesPerPlate).toBe(1)
+    expect(e.plates).toBe(3)
+  })
+
+  it('plates: counts whole rows × columns that fit on the bed', () => {
+    // (120+5)×(50+5) trên 180×180: 1 × 3 = 3; (30+5)×(80+5): 5 × 2 = 10
+    expect(estimatePrint({ ...cube, dims: { length: 120, width: 50, height: 10 } }, base).copiesPerPlate).toBe(3)
+    expect(estimatePrint({ ...cube, dims: { length: 30, width: 80, height: 10 } }, base).copiesPerPlate).toBe(10)
   })
 })
 

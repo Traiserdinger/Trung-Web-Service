@@ -18,6 +18,11 @@ function getWorker(): Worker {
     if (e.data.ok) job.resolve({ positions: e.data.positions, stats: e.data.stats })
     else job.reject(new Error(e.data.message))
   }
+  // Kết quả không giải mã được (messageerror) cũng phải kết thúc lời gọi, nếu không giao diện treo "Đang đọc file"
+  worker.onmessageerror = () => {
+    for (const job of pending.values()) job.reject(new Error('Không đọc được file STL'))
+    pending.clear()
+  }
   worker.onerror = () => {
     for (const job of pending.values()) job.reject(new Error('Không đọc được file STL'))
     pending.clear()

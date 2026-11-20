@@ -31,4 +31,17 @@ describe('processStl', () => {
   it('throws StlParseError for an empty file', () => {
     expect(() => processStl(new ArrayBuffer(84))).toThrow(StlParseError)
   })
+
+  it('reads a binary STL with a "solid" header and trailing bytes', () => {
+    const bin = toBinaryStl(makeBox(10, 10, 10), 'solid exported by SolidWorks')
+    const padded = new Uint8Array(bin.byteLength + 2)
+    padded.set(new Uint8Array(bin))
+    expect(processStl(padded.buffer).stats.volume).toBeCloseTo(1000, 3)
+  })
+
+  it('rejects files with NaN coordinates instead of quoting "NaNđ"', () => {
+    const mesh = makeBox(20, 20, 20)
+    mesh[4] = Number.NaN
+    expect(() => processStl(toBinaryStl(mesh))).toThrow(StlParseError)
+  })
 })

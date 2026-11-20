@@ -66,6 +66,8 @@ export function analyzeMesh(p: Float32Array, cfg: SlicerConfig = slicerConfig): 
   // Đỉnh cao nhất của tam giác: mặt chỉ bị loại khi NẰM HẲN sát bàn in (max y ≤ bedContactMm),
   // vì tam giác CAD dài thường có một góc chạm bàn mà vẫn là mặt treo.
   const triMaxY = new Float64Array(triangleCount)
+  // Thể tích có dấu của từng tam giác — cộng theo từng khối liên thông ở dưới
+  const triVol = new Float64Array(triangleCount)
 
   for (let t = 0; t < triangleCount; t++) {
     const o = t * 9
@@ -86,7 +88,9 @@ export function analyzeMesh(p: Float32Array, cfg: SlicerConfig = slicerConfig): 
     triMaxY[t] = Math.max(ay, by, cy)
 
     // a · (b × c) / 6
-    signed += (ax * (by * cz - bz * cy) + ay * (bz * cx - bx * cz) + az * (bx * cy - by * cx)) / 6
+    const v = (ax * (by * cz - bz * cy) + ay * (bz * cx - bx * cz) + az * (bx * cy - by * cx)) / 6
+    triVol[t] = v
+    signed += v
 
     minX = Math.min(minX, ax, bx, cx)
     maxX = Math.max(maxX, ax, bx, cx)
@@ -96,11 +100,28 @@ export function analyzeMesh(p: Float32Array, cfg: SlicerConfig = slicerConfig): 
     maxZ = Math.max(maxZ, az, bz, cz)
   }
 
-  // Nếu winding của cả file bị đảo thì pháp tuyến hướng vào trong — lật lại.
-  const orientation = signed < 0 ? -1 : 1
+  // Topology: khối liên thông + kiểm tra mesh kín có hướng
+  const topo = triangleCount > 0 ? analyzeTopology(p, triangleCount) : null
+
+  // Thể tích từng khối lấy trị tuyệt đối rồi mới cộng: một khối bị lật mặt
+  // (file CAD nhiều khối) không còn triệt tiêu thể tích của khối khác.
+  let volume = Math.abs(signed)
+  const compSign = new Float64Array(topo ? topo.componentCount : 0)
+  if (topo) {
+    const compVol = new Float64Array(topo.componentCount)
+    for (let t = 0; t < triangleCount; t++) compVol[topo.triComponent[t]] += triVol[t]
+    volume = 0
+    for (let c = 0; c < topo.componentCount; c++) {
+      volume += Math.abs(compVol[c])
+      compSign[c] = compVol[c] < 0 ? -1 : 1
+    }
+  }
+
+  // Pháp tuyến hướng vào trong ở khối bị đảo winding — lật lại theo từng khối.
   const threshold = -Math.cos((cfg.overhangAngleDeg * Math.PI) / 180)
   let overhangArea = 0
   for (let t = 0; t < triangleCount; t++) {
+    const orientation = topo ? compSign[topo.triComponent[t]] : signed < 0 ? -1 : 1
     if (triNy[t] * orientation < threshold && triMaxY[t] > cfg.bedContactMm) overhangArea += triArea[t]
   }
 
@@ -112,39 +133,88 @@ export function analyzeMesh(p: Float32Array, cfg: SlicerConfig = slicerConfig): 
   return {
     dims,
     surfaceArea: area,
-    volume: Math.abs(signed),
+    volume,
     signedVolume: signed,
-    isWatertight: triangleCount > 0 && checkWatertight(p, triangleCount),
+    isWatertight: topo?.watertight ?? false,
     overhangArea,
     triangleCount,
   }
 }
 
-/** Mỗi cạnh (sau khi gộp đỉnh trùng, sai số 1e-4 mm) phải thuộc đúng 2 tam giác. */
-function checkWatertight(p: Float32Array, triangleCount: number): boolean {
+/**
+ * Gộp đỉnh trùng (sai số 1e-4 mm), nhóm tam giác thành khối liên thông và kiểm tra mesh kín CÓ HƯỚNG:
+ * mỗi cạnh có hướng a→b phải xuất hiện đúng một lần và cạnh ngược b→a cũng đúng một lần.
+ * Một mặt bị lật trong khối làm hai tam giác kề nhau đi cùng chiều trên cạnh chung → không kín.
+ */
+function analyzeTopology(
+  p: Float32Array,
+  triangleCount: number,
+): { watertight: boolean; triComponent: Int32Array; componentCount: number } {
   const vertexIds = new Map<string, number>()
-  const idOf = (i: number) => {
-    const key = `${Math.round(p[i] * 1e4)},${Math.round(p[i + 1] * 1e4)},${Math.round(p[i + 2] * 1e4)}`
+  const tri = new Int32Array(triangleCount * 3)
+  for (let i = 0; i < triangleCount * 3; i++) {
+    const o = i * 3
+    const key = `${Math.round(p[o] * 1e4)},${Math.round(p[o + 1] * 1e4)},${Math.round(p[o + 2] * 1e4)}`
     let id = vertexIds.get(key)
     if (id === undefined) {
       id = vertexIds.size
       vertexIds.set(key, id)
     }
-    return id
+    tri[i] = id
   }
-  const edges = new Map<string, number>()
+  const V = vertexIds.size
+
+  // Union-find trên đỉnh
+  const parent = new Int32Array(V)
+  for (let i = 0; i < V; i++) parent[i] = i
+  const find = (x: number): number => {
+    while (parent[x] !== x) {
+      parent[x] = parent[parent[x]]
+      x = parent[x]
+    }
+    return x
+  }
+  const union = (a: number, b: number) => {
+    const ra = find(a)
+    const rb = find(b)
+    if (ra !== rb) parent[ra] = rb
+  }
+
+  const directed = new Map<number, number>()
   for (let t = 0; t < triangleCount; t++) {
-    const ids = [idOf(t * 9), idOf(t * 9 + 3), idOf(t * 9 + 6)]
     for (let k = 0; k < 3; k++) {
-      const a = ids[k]
-      const b = ids[(k + 1) % 3]
+      const a = tri[t * 3 + k]
+      const b = tri[t * 3 + ((k + 1) % 3)]
+      union(a, b)
       if (a === b) continue // tam giác suy biến
-      const key = a < b ? `${a}-${b}` : `${b}-${a}`
-      edges.set(key, (edges.get(key) ?? 0) + 1)
+      const key = a * V + b
+      directed.set(key, (directed.get(key) ?? 0) + 1)
     }
   }
-  for (const n of edges.values()) if (n !== 2) return false
-  return edges.size > 0
+  let watertight = directed.size > 0
+  if (watertight) {
+    for (const [key, n] of directed) {
+      const a = Math.floor(key / V)
+      const b = key - a * V
+      if (n !== 1 || directed.get(b * V + a) !== 1) {
+        watertight = false
+        break
+      }
+    }
+  }
+
+  const compIndex = new Map<number, number>()
+  const triComponent = new Int32Array(triangleCount)
+  for (let t = 0; t < triangleCount; t++) {
+    const root = find(tri[t * 3])
+    let c = compIndex.get(root)
+    if (c === undefined) {
+      c = compIndex.size
+      compIndex.set(root, c)
+    }
+    triComponent[t] = c
+  }
+  return { watertight, triComponent, componentCount: compIndex.size }
 }
 
 export function isSuspectedInches(d: Dims, cfg: SlicerConfig = slicerConfig): boolean {
