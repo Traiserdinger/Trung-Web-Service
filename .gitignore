@@ -28,3 +28,6 @@ dist-ssr
 
 # wrangler
 .wrangler/
+
+# Công cụ chuyển file chạy trên máy, không deploy: không đưa lockfile lên repo
+scripts/assets/package-lock.json
