@@ -3,7 +3,7 @@
   // Site tĩnh: Workers chỉ phục vụ thư mục dist sau `npm run build`.
   // Trước đây Cloudflare tự sinh cấu hình này lúc deploy nhánh main; `wrangler preview`
   // (build cho nhánh khác và PR) bắt buộc có file cấu hình kèm khối "previews".
-  "name": "trung-web-service",
+  "name": "trung-pcb-3d",
   "compatibility_date": "2026-11-18",
   "observability": {
     "enabled": true
