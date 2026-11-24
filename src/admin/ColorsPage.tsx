@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useFail } from './session.ts'
 import { createColor, listColors, patchColor, type AdminColor } from './adminApi.ts'
 
 const HEX_RE = /^#[0-9a-f]{6}$/i
@@ -6,6 +7,7 @@ const HEX_RE = /^#[0-9a-f]{6}$/i
 export function ColorsPage() {
   const [colors, setColors] = useState<AdminColor[]>([])
   const [error, setError] = useState('')
+  const fail = useFail(setError)
   const [name, setName] = useState('')
   const [hex, setHex] = useState('#888888')
 
@@ -13,11 +15,11 @@ export function ColorsPage() {
     let alive = true
     listColors()
       .then((d) => alive && setColors(d.colors))
-      .catch((e: Error) => alive && setError(e.message))
+      .catch((e: Error) => alive && fail(e))
     return () => {
       alive = false
     }
-  }, [])
+  }, [fail])
 
   const replace = (c: AdminColor) => setColors((prev) => prev.map((x) => (x.id === c.id ? c : x)))
   async function run(fn: () => Promise<void>, resync = false) {
@@ -25,7 +27,7 @@ export function ColorsPage() {
     try {
       await fn()
     } catch (e) {
-      setError((e as Error).message)
+      fail(e)
       if (resync) await listColors().then((d) => setColors(d.colors)).catch(() => {})
     }
   }

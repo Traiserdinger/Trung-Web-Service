@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { STATUS_LABEL, STATUSES } from '../shared/orderStatus.ts'
+import { useFail } from './session.ts'
 import { listOrders, type OrdersPage } from './adminApi.ts'
 
 const vnDate = (iso: string) =>
@@ -12,6 +13,7 @@ export function OrdersList() {
   const [page, setPage] = useState(1)
   const [data, setData] = useState<OrdersPage | null>(null)
   const [error, setError] = useState('')
+  const fail = useFail(setError)
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -25,11 +27,11 @@ export function OrdersList() {
     let alive = true
     listOrders({ status, q, page })
       .then((d) => alive && (setData(d), setError('')))
-      .catch((e: Error) => alive && setError(e.message))
+      .catch((e: Error) => alive && fail(e))
     return () => {
       alive = false
     }
-  }, [status, q, page])
+  }, [status, q, page, fail])
 
   const pages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1
   const tab = (active: boolean) =>

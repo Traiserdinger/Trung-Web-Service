@@ -1,6 +1,6 @@
 import type { OrderStatus } from '../shared/orderStatus.ts'
 
-export const SESSION_EXPIRED = 'Phiên đăng nhập hết hạn, tải lại trang'
+export const SESSION_EXPIRED = 'Phiên đăng nhập hết hạn, vui lòng đăng nhập lại'
 
 export interface OrderListItem {
   code: string
@@ -58,7 +58,7 @@ export interface OrdersPage {
   pageSize: number
 }
 
-async function call<T>(path: string, init?: { method: string; body?: unknown }): Promise<T> {
+async function call<T>(path: string, init?: { method: string; body?: unknown }, auth = false): Promise<T> {
   let res: Response
   try {
     res = await fetch(path, {
@@ -68,10 +68,11 @@ async function call<T>(path: string, init?: { method: string; body?: unknown }):
       body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
     })
   } catch {
-    // Phiên Access hết hạn: trình duyệt bị chuyển sang trang đăng nhập khác origin nên fetch ném lỗi.
+    if (auth) throw new Error('Không kết nối được máy chủ, thử lại sau')
     throw new Error(SESSION_EXPIRED)
   }
-  if (res.status === 401 || res.redirected || res.type === 'opaqueredirect') throw new Error(SESSION_EXPIRED)
+  // Với /api/auth/*, 401 là lỗi nghiệp vụ (sai mã), giữ nguyên chữ của server.
+  if (!auth && (res.status === 401 || res.redirected || res.type === 'opaqueredirect')) throw new Error(SESSION_EXPIRED)
   let data: { ok?: boolean; error?: string } & Record<string, unknown> = {}
   try {
     data = await res.json()
@@ -109,3 +110,23 @@ export const createColor = (name: string, hex: string) =>
 
 export const patchColor = (id: number, patch: Partial<Pick<AdminColor, 'name' | 'hex' | 'sort'>> & { active?: boolean }) =>
   call<{ color: AdminColor }>(`/api/colors/${id}`, { method: 'PATCH', body: patch })
+
+export const requestCode = async () =>
+  (await call<{ message: string }>('/api/auth/request-code', { method: 'POST', body: {} }, true)).message
+
+export const verifyCode = async (code: string) => {
+  await call<{ ok: true }>('/api/auth/verify', { method: 'POST', body: { code } }, true)
+}
+
+export const logout = async () => {
+  await call<{ ok: true }>('/api/auth/logout', { method: 'POST', body: {} }, true)
+}
+
+export async function checkSession(): Promise<boolean> {
+  try {
+    await call<{ ok: true }>('/api/auth/me', undefined, true)
+    return true
+  } catch {
+    return false
+  }
+}

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { STATUS_LABEL, STATUSES, type OrderStatus } from '../shared/orderStatus.ts'
 import { formatVnd } from '../utils/format.ts'
 import { deleteOrder, getOrder, setStatus, type OrderEvent, type OrderRow } from './adminApi.ts'
+import { useFail } from './session.ts'
 import { DeleteDialog } from './DeleteDialog.tsx'
 
 const vnDateTime = (iso: string) =>
@@ -72,6 +73,7 @@ function OrderDetailBody({ code }: { code: string }) {
   const [order, setOrder] = useState<OrderRow | null>(null)
   const [events, setEvents] = useState<OrderEvent[]>([])
   const [error, setError] = useState('')
+  const fail = useFail(setError)
   const [status, setStatusValue] = useState<OrderStatus>('received')
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
@@ -86,11 +88,11 @@ function OrderDetailBody({ code }: { code: string }) {
         setEvents(d.events)
         setStatusValue(d.order.status)
       })
-      .catch((e: Error) => alive && setError(e.message))
+      .catch((e: Error) => alive && fail(e))
     return () => {
       alive = false
     }
-  }, [code])
+  }, [code, fail])
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -102,7 +104,7 @@ function OrderDetailBody({ code }: { code: string }) {
       setOrder((o) => (o ? { ...o, status } : o))
       setNote('')
     } catch (err) {
-      setError((err as Error).message)
+      fail(err)
     } finally {
       setBusy(false)
     }
@@ -113,7 +115,7 @@ function OrderDetailBody({ code }: { code: string }) {
       await deleteOrder(code)
       window.location.hash = '#/orders'
     } catch (err) {
-      setError((err as Error).message)
+      fail(err)
       setDeleting(false)
     }
   }
