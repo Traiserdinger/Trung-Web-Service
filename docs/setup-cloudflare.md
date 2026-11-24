@@ -39,7 +39,8 @@ Mỗi lệnh in ra một `database_id` (dạng `xxxxxxxx-xxxx-…`). Dán vào c
 | File | Vị trí | id cần dán |
 |---|---|---|
 | `wrangler.jsonc` | `d1_databases` (khối chính) | id của `trung-3d` |
-| `wrangler.jsonc` | `previews` → `d1_databases` | id của `trung-3d-preview` |
+| `wrangler.jsonc` | `previews` → `d1_databases` → `database_id` | id của `trung-3d-preview` |
+| `wrangler.jsonc` | `d1_databases` (khối chính) → `preview_database_id` | id của `trung-3d-preview` (**cùng id**, dán ở cả hai chỗ) |
 | `wrangler.admin.jsonc` | `d1_databases` | id của `trung-3d` (cùng DB với Worker công khai) |
 
 `database_id` không phải bí mật, được phép commit. Giữ nguyên `binding` là `DB`.
@@ -58,7 +59,7 @@ Hỏi xác nhận thì gõ `y`. Lệnh tạo bảng đơn hàng và 4 màu mặc
 npx wrangler d1 migrations apply DB --remote --preview
 ```
 
-Nếu lệnh trên báo không tìm thấy database preview, dùng tên trực tiếp: `npx wrangler d1 migrations apply trung-3d-preview --remote`. **Mỗi khi thêm một file mới trong thư mục `migrations/`, chạy lại lệnh này** cho database preview (database thật thì `npm run deploy` lo).
+**Mỗi khi thêm một file mới trong thư mục `migrations/`, chạy lại lệnh này** cho database preview (database thật thì `npm run deploy` lo).
 
 ## 4. Đặt secret
 
@@ -92,13 +93,13 @@ npx wrangler secret put TELEGRAM_CHAT_ID
 npx wrangler secret put TURNSTILE_SECRET
 ```
 
-**Worker admin** (thêm `-c wrangler.admin.jsonc`). **Lệnh này chỉ chạy được sau khi Worker admin đã deploy lần đầu (bước 6)**, nên nếu chưa có thì làm sau bước 6 rồi quay lại đây. Chỉ cần `SHARED_SECRET`, **cùng giá trị** với Worker công khai:
+**Worker admin** (thêm `-c wrangler.admin.jsonc`). Chỉ cần `SHARED_SECRET`, **cùng giá trị** với Worker công khai:
 
 ```powershell
 npx wrangler secret put SHARED_SECRET -c wrangler.admin.jsonc
 ```
 
-> Nếu lệnh báo Worker chưa tồn tại, hãy làm bước 5 và 6 trước (lần deploy đầu), rồi quay lại đặt secret và deploy lại.
+> **Lưu ý thứ tự:** lệnh `secret put` chỉ chạy được khi Worker đã tồn tại. Nếu báo Worker chưa tồn tại, hãy làm bước 5 (Worker công khai) và bước 6 (Worker admin) trước để có lần deploy đầu, rồi quay lại đặt secret và deploy lại.
 
 ## 5. Deploy Worker công khai
 

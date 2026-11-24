@@ -22,6 +22,8 @@
       "binding": "DB",
       "database_name": "trung-3d",
       "database_id": "00000000-0000-0000-0000-000000000000",
+      // Id của trung-3d-preview (giá trị tạm); cần để chạy `wrangler d1 migrations apply DB --remote --preview`.
+      "preview_database_id": "00000000-0000-0000-0000-000000000000",
       "migrations_dir": "migrations"
     }
   ],
