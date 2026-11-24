@@ -1,50 +1,76 @@
 // @vitest-environment node
 // Chạy Code.gs trong vm của Node với các dịch vụ Google giả lập.
+// Vé và phong bì được tạo bằng chính worker/shared/hmac.ts để chắc chắn hai bên tương thích.
+import { createHmac } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import vm from 'node:vm'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { makeTicket, signEnvelope, verifyEnvelope } from '../worker/shared/hmac.ts'
+
+const SECRET = 'test-shared-secret'
+const CODE = 'P3D-261120-AAAA'
+
+interface Fetched {
+  url: string
+  options: { method?: string; contentType?: string; payload: string; muteHttpExceptions?: boolean }
+}
 
 interface Fake {
-  folders: string[]
-  telegrams: string[]
-  mails: string[]
+  folders: Map<string, string[]> // tên thư mục → tên các file
+  fetches: Fetched[]
+  mails: { to: string; subject: string; text: string }[]
   driveFails: boolean
+  fetchFails: boolean
+  props: Record<string, string>
   ctx: Record<string, unknown> & { doPost(e: unknown): string; doGet(): string }
 }
 
 function load(): Fake {
-  const f = { folders: [] as string[], telegrams: [] as string[], mails: [] as string[], driveFails: false } as Fake
-  const cache = new Map<string, string>()
+  const f = {
+    folders: new Map<string, string[]>(),
+    fetches: [],
+    mails: [],
+    driveFails: false,
+    fetchFails: false,
+    props: { DRIVE_FOLDER_ID: 'ROOT', OWNER_EMAIL: 'o@x', SHARED_SECRET: SECRET, WORKER_URL: 'https://w.example' },
+  } as unknown as Fake
+  const folderObj = (n: string) => ({
+    getUrl: () => `https://drive/${n}`,
+    getFilesByName: (name: string) => ({ hasNext: () => f.folders.get(n)!.includes(name) }),
+    createFile: (blob: { name: string }) => void f.folders.get(n)!.push(blob.name),
+  })
   const ctx: Record<string, unknown> = {
     console: { error: () => {}, log: () => {} },
-    PropertiesService: {
-      getScriptProperties: () => ({
-        getProperty: (k: string) =>
-          ({ TELEGRAM_BOT_TOKEN: 't', TELEGRAM_CHAT_ID: '1', DRIVE_FOLDER_ID: 'ROOT', OWNER_EMAIL: 'o@x' })[k] ?? null,
-      }),
-    },
-    CacheService: {
-      getScriptCache: () => ({
-        get: (k: string) => cache.get(k) ?? null,
-        put: (k: string, v: string) => void cache.set(k, v),
-      }),
-    },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: (k: string) => f.props[k] ?? null }) },
     DriveApp: {
       getFolderById: () => ({
-        getFoldersByName: (n: string) => ({ hasNext: () => f.folders.includes(n) }),
+        getFoldersByName: (n: string) => ({
+          hasNext: () => f.folders.has(n),
+          next: () => folderObj(n),
+        }),
         createFolder: (n: string) => {
           if (f.driveFails) throw new Error('drive down')
-          f.folders.push(n)
-          return { createFile: () => {}, getUrl: () => `https://drive/${n}` }
+          f.folders.set(n, [])
+          return folderObj(n)
         },
       }),
     },
-    Utilities: { base64Decode: (s: string) => Buffer.from(s, 'base64'), newBlob: (_b: unknown, _t: string, name: string) => ({ name }) },
-    UrlFetchApp: {
-      fetch: (_url: string, o: { payload: string }) => void f.telegrams.push(JSON.parse(o.payload).text),
+    Utilities: {
+      base64Decode: (s: string) => Buffer.from(s, 'base64'),
+      newBlob: (_b: unknown, _t: string, name: string) => ({ name }),
+      // Giống Apps Script: trả mảng byte có dấu (-128..127).
+      computeHmacSha256Signature: (value: string, key: string) =>
+        Array.from(createHmac('sha256', key).update(value).digest(), (b) => (b > 127 ? b - 256 : b)),
     },
-    MailApp: { sendEmail: (_to: string, subject: string) => void f.mails.push(subject) },
+    UrlFetchApp: {
+      fetch: (url: string, options: Fetched['options']) => {
+        f.fetches.push({ url, options })
+        if (f.fetchFails) throw new Error('worker down')
+        return {}
+      },
+    },
+    MailApp: { sendEmail: (to: string, subject: string, text: string) => void f.mails.push({ to, subject, text }) },
     ContentService: { MimeType: { JSON: 'json' }, createTextOutput: (s: string) => ({ setMimeType: () => s }) },
   }
   vm.createContext(ctx)
@@ -53,84 +79,126 @@ function load(): Fake {
   return f
 }
 
-const order = (code: string, phone = '0913014605') => ({
-  orderCode: code,
-  orderType: 'quote',
-  consultReasons: [],
-  customer: { name: 'An', phone, email: '', note: '' },
-  settings: { material: 'PETG', layerHeight: 0.2, infillPercent: 15, wallLoops: 2, support: false, quantity: 1 },
-  dims: { length: 62, width: 40, height: 26 },
-  estimate: { grams: 27.3, timeSec: 3900, total: 32000, rangeLow: 26000, rangeHigh: 39000 },
+let f: Fake
+const post = (p: unknown) => JSON.parse(f.ctx.doPost({ postData: { contents: JSON.stringify(p) } }))
+
+const upload = async (over: Record<string, unknown> = {}) => ({
+  orderCode: CODE,
+  uploadTicket: await makeTicket(SECRET, CODE, 3),
   fileName: 'a.stl',
   fileSize: 3,
   fileBase64: 'AQID',
-  turnstileToken: null,
-  honeypot: '',
+  ...over,
 })
-
-let f: Fake
-const post = (p: unknown) => JSON.parse(f.ctx.doPost({ postData: { contents: JSON.stringify(p) } }))
 
 beforeEach(() => {
   f = load()
 })
 
-describe('Apps Script doPost', () => {
-  it('saves a quote order and notifies Telegram and email', () => {
-    expect(post(order('P3D-261120-AAAA'))).toEqual({ ok: true, orderCode: 'P3D-261120-AAAA' })
-    expect(f.folders).toEqual(['P3D-261120-AAAA'])
-    expect(f.telegrams[0]).toMatch(/^🟢 ĐƠN IN 3D P3D-261120-AAAA/)
-    expect(f.mails).toEqual(['[Đơn in 3D] P3D-261120-AAAA'])
+describe('Apps Script upload', () => {
+  it('valid ticket → 1 folder, callback to WORKER_URL/api/internal/file with a verifiable envelope', async () => {
+    expect(post(await upload())).toEqual({ ok: true, orderCode: CODE })
+    expect([...f.folders.keys()]).toEqual([CODE])
+    expect(f.folders.get(CODE)).toEqual(['a.stl'])
+    expect(f.fetches).toHaveLength(1)
+    const { url, options } = f.fetches[0]
+    expect(url).toBe('https://w.example/api/internal/file')
+    expect(options.method).toBe('post')
+    expect(options.contentType).toBe('application/json')
+    expect(options.muteHttpExceptions).toBe(true)
+    const verified = await verifyEnvelope(SECRET, JSON.parse(options.payload))
+    expect(verified).toEqual({ action: 'fileSaved', data: { orderCode: CODE, driveUrl: `https://drive/${CODE}` } })
   })
 
-  it('treats a resend of the same order code as already received (no duplicate folder or message)', () => {
-    post(order('P3D-261120-AAAA'))
-    expect(post(order('P3D-261120-AAAA'))).toEqual({ ok: true, orderCode: 'P3D-261120-AAAA' })
-    expect(f.folders).toEqual(['P3D-261120-AAAA'])
-    expect(f.telegrams).toHaveLength(1)
+  it('bad or expired ticket → ok:false, no folder', async () => {
+    const msg = 'Phiên gửi file đã hết hạn, vui lòng gửi lại đơn'
+    expect(post(await upload({ uploadTicket: 'junk' }))).toEqual({ ok: false, error: msg })
+    expect(post(await upload({ fileSize: 4 }))).toEqual({ ok: false, error: msg }) // vé cấp cho size khác
+    const old = await makeTicket(SECRET, CODE, 3, Date.now() - 1000 * 1000)
+    expect(post(await upload({ uploadTicket: old }))).toEqual({ ok: false, error: msg })
+    expect(f.folders.size).toBe(0)
+    expect(f.fetches).toHaveLength(0)
   })
 
-  it('does not count failed saves against the rate limit', () => {
-    f.driveFails = true
-    for (let i = 0; i < 3; i++) expect(post(order(`P3D-261120-AAA${i + 2}`)).ok).toBe(false)
-    f.driveFails = false
-    expect(post(order('P3D-261120-AAA9'))).toEqual({ ok: true, orderCode: 'P3D-261120-AAA9' })
+  it('missing SHARED_SECRET rejects uploads', async () => {
+    const p = await upload()
+    delete f.props.SHARED_SECRET
+    expect(post(p).ok).toBe(false)
+    expect(f.folders.size).toBe(0)
   })
 
-  it('still blocks a 4th successful order from the same phone within 10 minutes', () => {
-    for (const c of ['P3D-261120-AAA2', 'P3D-261120-AAA3', 'P3D-261120-AAA4']) expect(post(order(c)).ok).toBe(true)
-    expect(post(order('P3D-261120-AAA5'))).toEqual({
+  it('same ticket twice → still 1 folder, 1 file', async () => {
+    const p = await upload()
+    expect(post(p).ok).toBe(true)
+    expect(post(p).ok).toBe(true)
+    expect([...f.folders.keys()]).toEqual([CODE])
+    expect(f.folders.get(CODE)).toEqual(['a.stl'])
+  })
+
+  it('oversize base64 → 35MB error', async () => {
+    const big = 'A'.repeat(Math.ceil((35 * 1024 * 1024 * 4) / 3) + 8)
+    expect(post(await upload({ fileBase64: big }))).toEqual({
       ok: false,
-      error: 'Bạn đã gửi quá nhiều đơn, vui lòng thử lại sau 10 phút',
+      error: 'File lớn hơn 35MB, vui lòng gửi qua Zalo',
+    })
+    expect(f.folders.size).toBe(0)
+  })
+
+  it('Drive failure → ok:false with Zalo message', async () => {
+    f.driveFails = true
+    expect(post(await upload())).toEqual({
+      ok: false,
+      error: 'Không lưu được file, vui lòng gửi qua Zalo kèm mã đơn',
     })
   })
 
-  it('answers JSON and still notifies when the estimate is malformed after saving', () => {
-    const p = order('P3D-261120-AAAA') as ReturnType<typeof order> & { estimate: { grams: unknown } }
-    p.estimate.grams = null
-    expect(post(p)).toEqual({ ok: true, orderCode: 'P3D-261120-AAAA' })
-    expect(f.telegrams).toHaveLength(1)
+  it('callback failure is only logged, upload still succeeds', async () => {
+    f.fetchFails = true
+    expect(post(await upload())).toEqual({ ok: true, orderCode: CODE })
   })
 
-  it('rejects a resend under the same code with different content instead of silently dropping it', () => {
-    post(order('P3D-261120-AAAA'))
-    const changed = order('P3D-261120-AAAA')
-    changed.settings = { ...changed.settings, quantity: 5 }
-    expect(post(changed).ok).toBe(false)
+  it('sanitizes file names', async () => {
+    post(await upload({ fileName: 'a/b:c.stl' }))
+    expect(f.folders.get(CODE)).toEqual(['a_b_c.stl'])
+  })
+})
+
+describe('Apps Script envelopes', () => {
+  it('notifyStatus with valid envelope → mail to data.to', async () => {
+    const env = await signEnvelope(SECRET, 'notifyStatus', { to: 'k@x', subject: 'S', text: 'T' })
+    expect(post(env).ok).toBe(true)
+    expect(f.mails).toEqual([{ to: 'k@x', subject: 'S', text: 'T' }])
   })
 
-  it('records a Zalo hand-off order (file too big) without an STL', () => {
-    const p = { ...order('P3D-261120-AAAB'), fileBase64: '', fileDelivery: 'zalo' }
-    expect(post(p).ok).toBe(true)
-    expect(f.telegrams[0]).toMatch(/khách sẽ gửi qua Zalo/)
+  it('notifyOwner → mail to OWNER_EMAIL', async () => {
+    const env = await signEnvelope(SECRET, 'notifyOwner', { subject: 'S', text: 'T' })
+    expect(post(env).ok).toBe(true)
+    expect(f.mails).toEqual([{ to: 'o@x', subject: 'S', text: 'T' }])
   })
 
-  it('flags inch-rescaled files and keeps customer notes from forging the Drive line', () => {
-    const p = order('P3D-261120-AAAC')
-    p.customer = { ...p.customer, note: 'xin chào\nDrive: https://evil.example' }
-    post({ ...p, scale: 25.4 })
-    const lines = f.telegrams[0].split('\n')
-    expect(lines.filter((l) => l.startsWith('Drive: '))).toEqual(['Drive: https://drive/P3D-261120-AAAC'])
-    expect(f.telegrams[0]).toMatch(/×25,4/)
+  it('envelope ts 301 s old → unauthorized, no mail', async () => {
+    const env = await signEnvelope(SECRET, 'notifyStatus', { to: 'k@x', subject: 'S', text: 'T' }, Date.now() - 301_000)
+    expect(post(env)).toEqual({ ok: false, error: 'unauthorized' })
+    expect(f.mails).toHaveLength(0)
+  })
+
+  it('tampered data or wrong secret → unauthorized', async () => {
+    const env = await signEnvelope(SECRET, 'notifyStatus', { to: 'k@x', subject: 'S', text: 'T' })
+    expect(post({ ...env, data: { to: 'evil@x', subject: 'S', text: 'T' } }).error).toBe('unauthorized')
+    expect(post(await signEnvelope('other', 'notifyStatus', { to: 'k@x', subject: 'S', text: 'T' })).error).toBe('unauthorized')
+    expect(f.mails).toHaveLength(0)
+  })
+
+  it('missing SHARED_SECRET → unauthorized', async () => {
+    const env = await signEnvelope(SECRET, 'notifyOwner', { subject: 'S', text: 'T' })
+    delete f.props.SHARED_SECRET
+    expect(post(env).error).toBe('unauthorized')
+    expect(f.mails).toHaveLength(0)
+  })
+
+  it('unknown action with valid signature → error, no mail', async () => {
+    const env = await signEnvelope(SECRET, 'bogus', {})
+    expect(post(env).ok).toBe(false)
+    expect(f.mails).toHaveLength(0)
   })
 })

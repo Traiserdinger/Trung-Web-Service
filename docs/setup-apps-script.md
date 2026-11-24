@@ -1,41 +1,28 @@
 # Cài đặt nơi nhận đơn (Google Apps Script)
 
-Script chạy **bằng chính tài khoản Google của Trung** (minhlaductrung@gmail.com). Khi có đơn, script làm 3 việc: lưu file vào thư mục Drive, nhắn Telegram, gửi Gmail. Làm theo các bước dưới đây **một lần**, mất khoảng 15 phút.
+Script chạy **bằng chính tài khoản Google của Trung** (minhlaductrung@gmail.com). Việc kiểm tra đơn, chống spam và nhắn Telegram do Cloudflare Worker đảm nhiệm. Script này chỉ làm 2 việc: nhận file STL có vé do Worker cấp rồi lưu vào thư mục Drive (và báo lại cho Worker), và gửi Gmail khi Worker yêu cầu bằng phong bì có chữ ký. Làm theo các bước dưới đây **một lần**, mất khoảng 15 phút.
 
-## 1. Tạo bot Telegram
-
-1. Mở Telegram, tìm **@BotFather** và nhắn `/newbot`.
-2. Đặt tên bot, ví dụ `In3D Trung`, và username (phải kết thúc bằng `bot`), ví dụ `in3d_trung_bot`.
-3. BotFather sẽ trả về một **token** dạng `123456789:AA...`. Lưu token này lại. **Không gửi token cho ai.**
-
-## 2. Lấy chat id
-
-1. Mở bot vừa tạo và nhắn một tin bất kỳ, ví dụ `hi`.
-2. Mở trình duyệt, vào `https://api.telegram.org/bot<TOKEN>/getUpdates` (thay `<TOKEN>` bằng token ở bước 1).
-3. Tìm đoạn `"chat":{"id":123456789,...`. Số đó là **chat id**.
-
-## 3. Tạo dự án Apps Script
+## 1. Tạo dự án Apps Script
 
 1. Đăng nhập Google bằng **minhlaductrung@gmail.com**, rồi vào [script.google.com](https://script.google.com).
 2. Chọn **Dự án mới** (New project) và đặt tên, ví dụ `Nhận đơn in 3D`.
 3. Xoá hết nội dung mẫu trong `Code.gs`, rồi dán toàn bộ nội dung file [`apps-script/Code.gs`](../apps-script/Code.gs) vào.
 4. Bấm **Lưu** (biểu tượng đĩa mềm).
 
-## 4. Đặt Script Properties
+## 2. Đặt Script Properties
 
 Vào **Project Settings** (biểu tượng bánh răng) → **Script properties** → **Add script property**, rồi thêm lần lượt:
 
 | Property | Giá trị |
 |---|---|
-| `TELEGRAM_BOT_TOKEN` | token ở bước 1 |
-| `TELEGRAM_CHAT_ID` | chat id ở bước 2 |
 | `DRIVE_FOLDER_ID` | `1EIxvJZqVhZ8Y8Zp3JmoKgIIpM-Jrokh5` |
 | `OWNER_EMAIL` | `minhlaductrung@gmail.com` |
-| `TURNSTILE_SECRET` | *(tuỳ chọn, xem bước 9)* |
+| `SHARED_SECRET` | cùng giá trị với secret `SHARED_SECRET` của Worker |
+| `WORKER_URL` | địa chỉ Worker, ví dụ `https://xxx.workers.dev` (không có dấu `/` ở cuối) |
 
-Các giá trị bí mật chỉ nằm ở đây, **không** nằm trong code website.
+`TELEGRAM_*` và `TURNSTILE_SECRET` không còn dùng ở đây vì đã chuyển sang Worker. Nếu thiếu `SHARED_SECRET`, script từ chối mọi yêu cầu. Các giá trị bí mật chỉ nằm ở đây, **không** nằm trong code website.
 
-## 5. Deploy thành Web app
+## 3. Deploy thành Web app
 
 1. Bấm **Deploy** → **New deployment**.
 2. Bấm biểu tượng bánh răng cạnh "Select type", chọn **Web app**.
@@ -46,7 +33,7 @@ Các giá trị bí mật chỉ nằm ở đây, **không** nằm trong code web
 
 Kiểm tra nhanh: mở URL đó trong trình duyệt, phải thấy `{"ok":true}`.
 
-## 6. Gắn URL vào website
+## 4. Gắn URL vào website
 
 Mở `src/config/contactConfig.ts` và dán URL vào trường:
 
@@ -56,29 +43,21 @@ appsScriptUrl: 'https://script.google.com/macros/s/…/exec',
 
 Sau đó commit và push. Cloudflare Pages sẽ tự deploy lại.
 
-## 7. Đặt thư mục Drive ở chế độ riêng tư
+## 5. Đặt thư mục Drive ở chế độ riêng tư
 
 Trên Drive, chuột phải vào thư mục nhận đơn → **Chia sẻ** → **Quyền truy cập chung** → **Bị hạn chế** → **Xong**.
 
 Script vẫn ghi file được vì nó chạy bằng tài khoản của bạn. Người ngoài không xem được file của khách.
 
-## 8. Khi sửa code script
+## 6. Khi sửa code script
 
-Mỗi lần sửa `Code.gs` thì vào **Deploy** → **Manage deployments** → biểu tượng bút chì → **Version: New version** → **Deploy**. URL giữ nguyên. Nếu không tạo version mới thì web vẫn chạy code cũ.
-
-## 9. (Tuỳ chọn) Bật chống spam Cloudflare Turnstile
-
-1. Vào [dash.cloudflare.com](https://dash.cloudflare.com) → **Turnstile** → **Add widget**, rồi thêm tên miền `*.pages.dev` của web (và `localhost` nếu muốn thử trên máy).
-2. Copy **Site key** vào `contactConfig.turnstileSiteKey`.
-3. Copy **Secret key** vào Script Property `TURNSTILE_SECRET`.
-
-Nếu chưa bật Turnstile, web vẫn có lớp chống bot bằng trường ẩn (honeypot) và giới hạn mỗi SĐT tối đa 3 đơn trong 10 phút.
+**Sau mỗi lần sửa code phải deploy lại.** Mỗi lần sửa `Code.gs` thì vào **Deploy** → **Manage deployments** → biểu tượng bút chì → **Version: New version** → **Deploy**. URL giữ nguyên. Nếu không tạo version mới thì web vẫn chạy code cũ.
 
 ## Thử lại sau khi cài
 
 1. Mở web, thả một file STL nhỏ, chọn PETG rồi gửi đơn với SĐT của bạn.
-2. Trên Drive phải xuất hiện thư mục `P3D-…` chứa file `.stl` và `order.json`.
-3. Telegram phải nhận được tin bắt đầu bằng 🟢, và Gmail phải nhận được email `[Đơn in 3D] P3D-…`.
-4. Gửi thêm một đơn chọn ABS. Telegram phải nhận được tin bắt đầu bằng 🟠 CẦN TƯ VẤN.
+2. Trên Drive phải xuất hiện thư mục `P3D-…` chứa file `.stl`.
+3. Telegram (do Worker gửi) phải nhận được tin báo đơn, và Gmail phải nhận được email báo đơn.
+4. Chống spam Turnstile và giới hạn đơn theo SĐT được cấu hình ở Worker, không còn ở script này.
 
 Nếu không có gì xảy ra: trong script.google.com, vào **Executions** (biểu tượng danh sách) để xem lỗi.
