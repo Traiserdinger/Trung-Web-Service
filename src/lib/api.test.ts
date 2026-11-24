@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createOrder } from './api'
+import { createOrder, trackOrder } from './api'
 import { OrderSubmitError } from './submitOrder'
 import type { OrderMeta } from '../utils/orderPayload'
 
@@ -34,5 +34,26 @@ describe('createOrder', () => {
     await expect(createOrder(meta, down as unknown as typeof fetch)).rejects.toThrow('Không gửi được, kiểm tra mạng và thử lại')
     const html = vi.fn(async () => new Response('<html>'))
     await expect(createOrder(meta, html as unknown as typeof fetch)).rejects.toThrow('Không gửi được, kiểm tra mạng và thử lại')
+  })
+})
+
+describe('trackOrder', () => {
+  it('POSTs code and phone and returns the order', async () => {
+    const order = { code: 'P3D-241124-AB12' }
+    const f = reply({ ok: true, order })
+    await expect(trackOrder('P3D-241124-AB12', '0913', f as unknown as typeof fetch)).resolves.toEqual({ ok: true, order })
+    expect(f).toHaveBeenCalledWith('/api/track', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: 'P3D-241124-AB12', phone: '0913' }),
+    })
+  })
+  it('returns server error, and the network message when fetch throws', async () => {
+    await expect(trackOrder('a', 'b', reply({ ok: false, error: 'Sai' }) as unknown as typeof fetch)).resolves.toEqual({ ok: false, error: 'Sai' })
+    const boom = vi.fn(async () => Promise.reject(new Error('x')))
+    await expect(trackOrder('a', 'b', boom as unknown as typeof fetch)).resolves.toEqual({
+      ok: false,
+      error: 'Không gửi được, kiểm tra mạng và thử lại',
+    })
   })
 })

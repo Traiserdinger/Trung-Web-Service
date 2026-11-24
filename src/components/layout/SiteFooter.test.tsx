@@ -9,5 +9,6 @@ describe('SiteFooter', () => {
     expect(hrefs).toContain('https://zalo.me/0913014605')
     expect(hrefs).toContain('tel:0913014605')
     expect(hrefs).toContain('mailto:minhlaductrung@gmail.com')
+    expect(hrefs).toContain('/tra-cuu')
   })
 })

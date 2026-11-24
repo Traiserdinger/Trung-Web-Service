@@ -42,9 +42,14 @@ export function SiteFooter() {
               {c.name}. Thiết kế mạch, firmware và in 3D tại Việt Nam.
             </span>
           </div>
-          <a href={c.githubUrl} target="_blank" rel="noreferrer" className="text-white/80 hover:text-white">
-            GitHub của mình
-          </a>
+          <div className="flex gap-5">
+            <a href="/tra-cuu" className="text-white/80 hover:text-white">
+              Tra cứu đơn
+            </a>
+            <a href={c.githubUrl} target="_blank" rel="noreferrer" className="text-white/80 hover:text-white">
+              GitHub của mình
+            </a>
+          </div>
         </div>
       </div>
     </footer>

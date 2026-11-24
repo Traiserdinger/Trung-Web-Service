@@ -19,7 +19,7 @@ export function ChipGlyph({ className = 'h-7 w-7' }: { className?: string }) {
 
 export function Wordmark() {
   return (
-    <a href="#top" className="flex items-center gap-2.5 rounded-lg" aria-label="Đức Trung, về đầu trang">
+    <a href="/#top" className="flex items-center gap-2.5 rounded-lg" aria-label="Đức Trung, về đầu trang">
       <ChipGlyph />
       <span className="leading-tight">
         <span className="block font-display text-[18px] font-bold tracking-[-0.02em]">Đức Trung</span>

@@ -4,10 +4,11 @@ import { useTheme } from '../../lib/theme'
 import { Wordmark } from './Wordmark'
 
 const LINKS = [
-  { href: '#du-an', label: 'Dự án' },
-  { href: '#goi-dich-vu', label: 'Gói dịch vụ' },
-  { href: '#bao-gia', label: 'Báo giá in 3D' },
-  { href: '#lien-he', label: 'Liên hệ' },
+  { href: '/#du-an', label: 'Dự án' },
+  { href: '/#goi-dich-vu', label: 'Gói dịch vụ' },
+  { href: '/#bao-gia', label: 'Báo giá in 3D' },
+  { href: '/tra-cuu', label: 'Tra cứu đơn' },
+  { href: '/#lien-he', label: 'Liên hệ' },
 ]
 
 function ThemeToggle() {
