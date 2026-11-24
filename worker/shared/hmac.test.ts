@@ -54,4 +54,9 @@ describe('vé upload', () => {
     expect(await verifyTicket('x', t, 'C1', 10, NOW)).toBe(false)
     expect(await verifyTicket('s', 'rác', 'C1', 10, NOW)).toBe(false)
   })
+
+  it('vé không phải chuỗi thì false, không ném lỗi', async () => {
+    expect(await verifyTicket('s', undefined as unknown as string, 'C1', 10, NOW)).toBe(false)
+    expect(await verifyTicket('s', 123 as unknown as string, 'C1', 10, NOW)).toBe(false)
+  })
 })

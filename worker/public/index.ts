@@ -1,5 +1,6 @@
 import type { Env } from '../shared/env.ts'
 import { json } from '../shared/http.ts'
+import { handleCreateOrder } from './orders.ts'
 
 async function listColors(env: Env): Promise<Response> {
   const { results } = await env.DB.prepare(
@@ -9,10 +10,11 @@ async function listColors(env: Env): Promise<Response> {
 }
 
 export default {
-  async fetch(req: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
+  async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const { pathname } = new URL(req.url)
     if (!pathname.startsWith('/api/')) return env.ASSETS.fetch(req)
     if (pathname === '/api/colors' && req.method === 'GET') return listColors(env)
+    if (pathname === '/api/orders' && req.method === 'POST') return handleCreateOrder(req, env, ctx)
     return json({ ok: false }, 404)
   },
 }

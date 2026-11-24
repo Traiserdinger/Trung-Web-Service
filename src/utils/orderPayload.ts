@@ -70,6 +70,9 @@ export interface OrderPayload {
   createdAt: string
 }
 
+/** Phần metadata của đơn gửi lên Worker (file được tải lên riêng bằng vé). */
+export type OrderMeta = Omit<OrderPayload, 'fileBase64'> & { colorId: number }
+
 export function buildOrderPayload(a: {
   orderCode: string
   quote: QuoteState

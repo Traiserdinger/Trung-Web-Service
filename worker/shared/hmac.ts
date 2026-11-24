@@ -74,6 +74,7 @@ export async function verifyTicket(
   fileSize: number,
   now = Date.now(),
 ): Promise<boolean> {
+  if (typeof ticket !== 'string') return false
   const dot = ticket.indexOf('.')
   if (dot < 1) return false
   const expStr = ticket.slice(0, dot)
