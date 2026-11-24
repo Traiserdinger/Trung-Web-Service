@@ -59,9 +59,16 @@ function load(): Fake {
     Utilities: {
       base64Decode: (s: string) => Buffer.from(s, 'base64'),
       newBlob: (_b: unknown, _t: string, name: string) => ({ name }),
-      // Giống Apps Script: trả mảng byte có dấu (-128..127).
-      computeHmacSha256Signature: (value: string, key: string) =>
-        Array.from(createHmac('sha256', key).update(value).digest(), (b) => (b > 127 ? b - 256 : b)),
+      Charset: { UTF_8: 'UTF_8' },
+      // Giống Apps Script: trả mảng byte có dấu (-128..127). Không truyền charset thì Apps Script
+      // không mã hoá chuỗi theo UTF-8 (chữ có dấu ra chữ ký khác Worker) — giả lập bằng latin1.
+      computeHmacSha256Signature: (value: string, key: string, charset?: string) =>
+        Array.from(
+          createHmac('sha256', Buffer.from(key, charset === 'UTF_8' ? 'utf8' : 'latin1'))
+            .update(Buffer.from(value, charset === 'UTF_8' ? 'utf8' : 'latin1'))
+            .digest(),
+          (b) => (b > 127 ? b - 256 : b),
+        ),
     },
     UrlFetchApp: {
       fetch: (url: string, options: Fetched['options']) => {
@@ -175,6 +182,13 @@ describe('Apps Script envelopes', () => {
     const env = await signEnvelope(SECRET, 'notifyStatus', { to: 'k@x', subject: 'S', text: 'T' })
     expect(post(env).ok).toBe(true)
     expect(f.mails).toEqual([{ to: 'k@x', subject: 'S', text: 'T' }])
+  })
+
+  it('notifyStatus có chữ tiếng Việt → chữ ký khớp Worker (UTF-8), mail được gửi', async () => {
+    const data = { to: 'k@x', subject: '[In 3D Trung] Mã đăng nhập quản trị: 123456', text: 'Đơn đang in → xong' }
+    const env = await signEnvelope(SECRET, 'notifyStatus', data)
+    expect(post(env).ok).toBe(true)
+    expect(f.mails).toEqual([data])
   })
 
   it('notifyOwner → mail to OWNER_EMAIL', async () => {

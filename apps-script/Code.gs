@@ -46,7 +46,8 @@ function handle_(e) {
 
 /** HMAC-SHA256 dạng hex chữ thường. Apps Script trả byte có dấu nên phải cộng 256. */
 function hmacHex_(secret, msg) {
-  var bytes = Utilities.computeHmacSha256Signature(msg, secret);
+  // Phải chỉ rõ UTF-8: mặc định Apps Script không mã hoá theo UTF-8, chữ có dấu sẽ ra chữ ký khác Worker.
+  var bytes = Utilities.computeHmacSha256Signature(msg, secret, Utilities.Charset.UTF_8);
   var out = '';
   for (var i = 0; i < bytes.length; i++) {
     var b = bytes[i] < 0 ? bytes[i] + 256 : bytes[i];
