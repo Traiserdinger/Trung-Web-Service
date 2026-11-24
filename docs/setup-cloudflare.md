@@ -7,13 +7,13 @@ Từ bản này, đơn hàng được lưu trong cơ sở dữ liệu **Cloudfla
 | Công khai | `trung-pcb-3d` | Trang báo giá, nhận đơn, tra cứu đơn của khách | `wrangler.jsonc` |
 | Admin | `trung-3d-admin` | Trang quản lý đơn, đổi trạng thái, sửa màu (chỉ Trung vào được) | `wrangler.admin.jsonc` |
 
-Làm theo các bước dưới đây **một lần**, mất khoảng 45 phút. **Thứ tự rất quan trọng**: tạo D1 và dán id, đặt secret, deploy Worker công khai, deploy Worker admin, điền vars, cuối cùng cập nhật Script Properties của Apps Script rồi deploy lại Apps Script. Cài Apps Script trước theo [`setup-apps-script.md`](setup-apps-script.md) (bước 1 đến 3) để có URL Web app.
+Làm theo các bước dưới đây **một lần**, mất khoảng 45 phút. **Thứ tự rất quan trọng**: tạo D1 và dán id, đặt secret, deploy Worker công khai, deploy Worker admin, điền vars, cập nhật Script Properties của Apps Script rồi deploy lại Apps Script, và **cuối cùng mới đăng nhập admin** (mã đăng nhập đi qua Apps Script mới). Cài Apps Script trước theo [`setup-apps-script.md`](setup-apps-script.md) (bước 1 đến 3) để có URL Web app.
 
-> **Apps Script phải được cập nhật và deploy lại trước khi đăng nhập admin**, vì email chứa mã đăng nhập được gửi đi qua Apps Script (bước 9). Chưa làm bước 9 thì sẽ không nhận được mã.
+> **Apps Script phải được cập nhật và deploy lại (bước 8) trước khi đăng nhập admin (bước 9)**, vì email chứa mã đăng nhập được gửi đi qua Apps Script (bước 8). Chưa làm bước 8 thì sẽ không nhận được mã.
 
 > **Bí mật không bao giờ được dán vào repo hay vào code website.** Secret chỉ nhập bằng lệnh `wrangler secret put` (hoặc vào Script Properties của Apps Script). Các file `wrangler.jsonc` và `wrangler.admin.jsonc` chỉ chứa giá trị công khai (id cơ sở dữ liệu, địa chỉ website).
 
-> **Khi `APPS_SCRIPT_URL` còn trống**, website chạy như **bản preview**: đơn vẫn được lưu vào D1 và xem được ở trang admin, nhưng **không có upload file STL, không gửi email, không nhắn Telegram**. Hãy điền biến này ở bước 8 để chạy thật.
+> **Khi `APPS_SCRIPT_URL` còn trống**, website chạy như **bản preview**: đơn vẫn được lưu vào D1 và xem được ở trang admin, nhưng **không có upload file STL, không gửi email, không nhắn Telegram**. Hãy điền biến này ở bước 7 để chạy thật.
 
 Các lệnh dưới đây chạy trong thư mục dự án (PowerShell hoặc Terminal).
 
@@ -77,7 +77,7 @@ openssl rand -hex 32
 
 | Secret | Giá trị lấy ở đâu |
 |---|---|
-| `SHARED_SECRET` | chuỗi vừa sinh ở trên. **Lưu lại**, còn dùng cho Worker admin ngay bên dưới và ở bước 9 |
+| `SHARED_SECRET` | chuỗi vừa sinh ở trên. **Lưu lại**, còn dùng cho Worker admin ngay bên dưới và ở bước 8 |
 | `TELEGRAM_BOT_TOKEN` | token của bot Telegram (từ @BotFather) |
 | `TELEGRAM_CHAT_ID` | id cuộc trò chuyện nhận tin báo đơn |
 | `TURNSTILE_SECRET` | secret key Cloudflare Turnstile. **Tuỳ chọn**, bỏ qua nếu không dùng |
@@ -136,23 +136,7 @@ Tạo project Workers Builds thứ hai từ **cùng repo** này: **Workers & Pag
 
 (Lệnh deploy tự build giao diện admin ra thư mục `dist-admin`.) Sau khi deploy xong, địa chỉ admin là `https://trung-3d-admin.<subdomain>.workers.dev`.
 
-## 7. Đăng nhập trang admin
-
-Trang admin không có mật khẩu. Mỗi lần đăng nhập, hệ thống gửi một **mã 6 số** tới email đầu tiên trong `ADMIN_EMAILS`:
-
-1. Mở địa chỉ admin: https://trung-3d-admin.minhlaductrung.workers.dev
-2. Bấm **Gửi mã tới email**.
-3. Mở Gmail, tìm thư có tiêu đề `[In 3D Trung] Mã đăng nhập quản trị: ...`, lấy mã 6 số.
-4. Nhập mã vào ô **Mã 6 số** rồi đăng nhập.
-
-Cần biết:
-
-- Mã chỉ có hiệu lực **10 phút** và dùng được **một lần**. Nhập sai 5 lần thì mã bị huỷ, phải bấm gửi mã mới.
-- Có giới hạn chống lạm dụng: mỗi địa chỉ IP chỉ xin mã tối đa 3 lần trong 10 phút, và toàn hệ thống tối đa 20 mã mỗi ngày. Bị chặn thì đợi rồi thử lại.
-- Đăng nhập xong, trình duyệt nhớ **7 ngày** rồi hỏi lại mã.
-- Không thấy thư: kiểm tra mục Spam, và chắc chắn Apps Script đã cập nhật và deploy lại (bước 9).
-
-## 8. Điền các biến (vars)
+## 7. Điền các biến (vars)
 
 Điền vào hai file rồi commit và push (đây là giá trị công khai, không phải bí mật).
 
@@ -168,7 +152,7 @@ Cần biết:
 
 | Biến | Giá trị |
 |---|---|
-| `ADMIN_EMAILS` | email nhận mã đăng nhập; mã luôn gửi tới email **đầu tiên** trong danh sách (nhiều email cách nhau bằng dấu phẩy). Đổi biến này thì mọi phiên cũ mất hiệu lực |
+| `ADMIN_EMAILS` | email nhận mã đăng nhập; mã luôn gửi tới email **đầu tiên** trong danh sách (nhiều email cách nhau bằng dấu phẩy). Đổi **email đầu tiên** thì mọi phiên cũ mất hiệu lực (đổi các email sau thì không) |
 | `APPS_SCRIPT_URL` | cùng URL Apps Script như trên |
 | `PUBLIC_SITE_URL` | cùng địa chỉ website khách như trên |
 
@@ -199,7 +183,7 @@ Trong `src/config/contactConfig.ts`, `appsScriptUrl` cũng dán **cùng URL Apps
 
 Push lên `main` để cả hai Worker deploy lại với các biến mới.
 
-## 9. Cập nhật Apps Script và deploy lại
+## 8. Cập nhật Apps Script và deploy lại
 
 Mở dự án Apps Script, vào **Project Settings** → **Script properties** và thêm hai dòng (xem thêm [`setup-apps-script.md`](setup-apps-script.md)):
 
@@ -210,10 +194,26 @@ Mở dự án Apps Script, vào **Project Settings** → **Script properties** v
 
 Sau đó **deploy lại**: **Deploy** → **Manage deployments** → biểu tượng bút chì → **Version: New version** → **Deploy**. Không tạo version mới thì Apps Script vẫn chạy cấu hình cũ.
 
+## 9. Đăng nhập trang admin
+
+Trang admin không có mật khẩu. Mỗi lần đăng nhập, hệ thống gửi một **mã 6 số** tới email đầu tiên trong `ADMIN_EMAILS`:
+
+1. Mở địa chỉ admin: https://trung-3d-admin.minhlaductrung.workers.dev
+2. Bấm **Gửi mã tới email**.
+3. Mở Gmail, tìm thư có tiêu đề `[In 3D Trung] Mã đăng nhập quản trị: ...`, lấy mã 6 số.
+4. Nhập mã vào ô **Mã 6 số** rồi đăng nhập.
+
+Cần biết:
+
+- Mã chỉ có hiệu lực **10 phút** và dùng được **một lần**. Nhập sai 5 lần thì mã bị huỷ, phải bấm gửi mã mới. Ngoài ra mỗi mạng (IP) chỉ được thử nhập mã tối đa 10 lần trong 10 phút.
+- Có giới hạn chống lạm dụng: mỗi địa chỉ IP chỉ xin mã tối đa 3 lần trong 10 phút, và toàn hệ thống tối đa 20 mã mỗi ngày. Bị chặn thì đợi rồi thử lại.
+- Đăng nhập xong, trình duyệt nhớ **7 ngày** rồi hỏi lại mã.
+- Không thấy thư: kiểm tra mục Spam, và chắc chắn Apps Script đã cập nhật và deploy lại (bước 8).
+
 ## 10. Kiểm tra cuối
 
 1. **Admin có khoá chưa**: mở địa chỉ admin ở **cửa sổ ẩn danh**. Phải thấy màn hình đăng nhập (nút **Gửi mã tới email**), không thấy danh sách đơn. Ngoài ra, gọi `https://trung-3d-admin.minhlaductrung.workers.dev/api/orders` khi chưa đăng nhập phải nhận `401`. Nếu không đúng, kiểm tra `ADMIN_EMAILS` và `ADMIN_SESSION_SECRET` đã đặt chưa.
-2. **Đăng nhập admin** theo bước 7: thấy danh sách đơn, có mục **Màu**.
+2. **Đăng nhập admin** theo bước 9: thấy danh sách đơn, có mục **Màu**.
 3. **Gửi thử một đơn** ở website (nhập email của bạn, thả file STL nhỏ). Có mã đơn dạng `P3D-…`. Telegram phải nhận tin, Drive có thư mục `P3D-…` chứa file STL.
 4. **Tra cứu đơn** đó bằng mã đơn và SĐT ở trang tra cứu: phải thấy trạng thái "Đã nhận đơn".
 5. **Đổi trạng thái** đơn trong admin (ví dụ sang "Đang in 3D") và **gõ ghi chú tiếng Việt có dấu** (ví dụ `Đã in xong, đang kiểm tra bề mặt`). Email gửi tới khách phải có **tiêu đề và nội dung hiện đúng dấu tiếng Việt**. Việc này cũng xác nhận chữ ký HMAC giữa Worker và Apps Script hoạt động đúng với UTF-8 trên môi trường thật. Nếu không có email, kiểm tra `SHARED_SECRET` hai nơi giống hệt nhau và Apps Script đã deploy version mới.
@@ -227,10 +227,10 @@ Vào trang admin → **Màu** để thêm, sửa, tắt màu (tên và mã màu)
 
 | Triệu chứng | Cách xử lý |
 |---|---|
-| Admin không cho vào, mọi thao tác báo 401 | Chưa đặt `ADMIN_EMAILS` hoặc secret `ADMIN_SESSION_SECRET` (bước 4, 8) |
-| Bấm gửi mã mà không có email | Apps Script chưa cập nhật hoặc chưa deploy lại (bước 9), hoặc thư nằm trong Spam |
+| Admin không cho vào, mọi thao tác báo 401 | Chưa đặt `ADMIN_EMAILS` hoặc secret `ADMIN_SESSION_SECRET` (bước 4, 7) |
+| Bấm gửi mã mà không có email | Apps Script chưa cập nhật hoặc chưa deploy lại (bước 8), hoặc thư nằm trong Spam |
 | Báo "quá nhiều mã" | Đã xin mã quá giới hạn (3 lần/10 phút), đợi 10 phút rồi thử lại |
 | Chưa áp dụng migration 0002 (lỗi khi gửi mã) | Chạy `npx wrangler d1 migrations apply DB --remote` và thêm `--preview` cho database preview (bước 3) |
 | Gửi đơn được nhưng không có email/Telegram/file | `APPS_SCRIPT_URL` còn trống (chế độ preview), hoặc thiếu secret ở bước 4 |
-| Email không gửi sau khi đổi trạng thái | `SHARED_SECRET` hai nơi khác nhau, hoặc chưa deploy lại Apps Script (bước 9) |
+| Email không gửi sau khi đổi trạng thái | `SHARED_SECRET` hai nơi khác nhau, hoặc chưa deploy lại Apps Script (bước 8) |
 | `wrangler` báo sai `database_id` | Kiểm tra lại bước 2, id đúng trong cả ba chỗ |
