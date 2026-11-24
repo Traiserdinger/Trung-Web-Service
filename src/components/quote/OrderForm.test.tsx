@@ -214,6 +214,14 @@ describe('OrderForm', () => {
     expect(link.getAttribute('href')).toBe(`/tra-cuu?ma=${CODE}`)
   })
 
+  it('preview → hiện "Đây là bản thử, không lưu file." và không có câu Zalo', async () => {
+    setup(vi.fn(async (p: OrderPayload) => ({ orderCode: p.orderCode, trackUrl: '', fileUploaded: false, preview: true })))
+    await fillValid()
+    await userEvent.click(screen.getByRole('button', { name: 'Gửi đơn' }))
+    expect(await screen.findByText('Đây là bản thử, không lưu file.')).toBeInTheDocument()
+    expect(screen.queryByText(/file chưa gửi được/)).not.toBeInTheDocument()
+  })
+
   it('fileUploaded false → hiện câu gửi file qua Zalo', async () => {
     setup(vi.fn(async (p: OrderPayload) => ({ orderCode: p.orderCode, trackUrl: '', fileUploaded: false })))
     await fillValid()

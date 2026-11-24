@@ -28,7 +28,7 @@ function statusEmail(order: OrderRow, status: OrderStatus, note: string | null, 
     `Thời điểm: ${vnTime(at)}`,
   ]
   if (note) lines.push(`Ghi chú: ${note}`)
-  lines.push('', `Xem tiến độ đơn: ${siteUrl}/tra-cuu?ma=${order.code}`, '', `Liên hệ Zalo ${contactConfig.phone}`)
+  lines.push('', `Xem tiến độ đơn: ${siteUrl.replace(/\/+$/, '')}/tra-cuu?ma=${order.code}`, '', `Liên hệ Zalo ${contactConfig.phone}`)
   return {
     to: order.customerEmail,
     subject: `[In 3D Trung] Đơn ${order.code}: ${STATUS_LABEL[status]}`,

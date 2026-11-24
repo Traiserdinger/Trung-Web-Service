@@ -174,12 +174,66 @@ describe('POST /api/orders', () => {
     expect(tg()).toHaveLength(1)
   })
 
-  it('APPS_SCRIPT_URL rỗng: không vé, không gọi Apps Script', async () => {
+  it('APPS_SCRIPT_URL rỗng: không vé, không Telegram, không Apps Script, preview=true', async () => {
     const env = makeEnv({ ...full, APPS_SCRIPT_URL: '' })
     const { body } = await post(env, meta())
     expect(body.ok).toBe(true)
     expect(body.uploadTicket).toBeNull()
+    expect(body.preview).toBe(true)
     expect(aps()).toHaveLength(0)
+    expect(tg()).toHaveLength(0)
+    expect(calls).toHaveLength(0)
+  })
+
+  it('có APPS_SCRIPT_URL: preview=false, fileStatus pending; gửi lại sau khi file đã lưu → saved', async () => {
+    const env = makeEnv(full)
+    const first = (await post(env, meta())).body
+    expect(first).toMatchObject({ preview: false, fileStatus: 'pending' })
+    await env.DB.prepare("UPDATE orders SET file_status='saved' WHERE code='P3D-250101-ABCD'").run()
+    const again = (await post(env, meta())).body
+    expect(again).toMatchObject({ ok: true, preview: false, fileStatus: 'saved', uploadTicket: null })
+  })
+
+  it('fileDelivery zalo → fileStatus zalo', async () => {
+    const env = makeEnv(full)
+    expect((await post(env, meta({ fileDelivery: 'zalo' }))).body.fileStatus).toBe('zalo')
+  })
+
+  it('Telegram trả non-2xx: ghi console.error, đơn vẫn ok', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      calls.push({ url: String(url), body: String(init?.body ?? '') })
+      return new Response('{}', { status: String(url).includes('telegram') ? 401 : 200 })
+    })
+    const { body } = await post(makeEnv(full), meta())
+    expect(body.ok).toBe(true)
+    expect(err.mock.calls.some((c) => String(c[0]).includes('telegram'))).toBe(true)
+    err.mockRestore()
+  })
+
+  it('email có nhiều địa chỉ bị từ chối', async () => {
+    const env = makeEnv(full)
+    const bad = meta({ customer: { name: 'An', phone: '0913 014 605', email: 'a@x.com,b@y.com', note: '' } })
+    expect((await post(env, bad)).body).toEqual({ ok: false, error: 'Email không hợp lệ' })
+    const ok = meta({ customer: { name: 'An', phone: '0913 014 605', email: 'a@x.com', note: '' } })
+    expect((await post(env, ok)).body.ok).toBe(true)
+  })
+
+  it('thiếu SHARED_SECRET: đơn vẫn ghi, uploadTicket null, không 500', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const env = makeEnv({ ...full, SHARED_SECRET: '' })
+    const { res, body } = await post(env, meta())
+    expect(res.status).toBe(200)
+    expect(body).toMatchObject({ ok: true, uploadTicket: null })
+    expect(await getOrder(env.DB, 'P3D-250101-ABCD')).not.toBeNull()
+    err.mockRestore()
+  })
+
+  it('URL có dấu / cuối: không sinh //', async () => {
+    const env = makeEnv({ ...full, PUBLIC_SITE_URL: 'https://site/', ADMIN_SITE_URL: 'https://admin/' })
+    const { body } = await post(env, meta())
+    expect(body.trackUrl).toBe('https://site/tra-cuu?ma=P3D-250101-ABCD')
+    expect(JSON.parse(tg()[0].body).text).toContain('Admin: https://admin/#/orders/P3D-250101-ABCD')
   })
 
   it('Telegram lỗi: vẫn ok', async () => {

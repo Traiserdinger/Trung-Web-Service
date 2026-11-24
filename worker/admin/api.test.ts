@@ -87,6 +87,14 @@ describe('xác thực', () => {
 })
 
 describe('đổi trạng thái', () => {
+  it('PUBLIC_SITE_URL có dấu / cuối: link tra cứu không có //', async () => {
+    const env = { ...adminEnv(), PUBLIC_SITE_URL: 'https://site/' }
+    await insertOrder(env.DB, row())
+    await call(env, 'POST', `/api/orders/${CODE}/status`, { status: 'printing', note: null })
+    const sent = JSON.parse(fetchMock.mock.calls[0][1].body)
+    const data = typeof sent.data === 'string' ? JSON.parse(sent.data) : sent.data
+    expect(data.text).toContain(`https://site/tra-cuu?ma=${CODE}`)
+  })
   it('printing có email → event mới, gửi notifyStatus, email_sent 1', async () => {
     const env = adminEnv()
     await insertOrder(env.DB, row())

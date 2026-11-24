@@ -8,11 +8,16 @@ export interface CreatedOrder {
   orderCode: string
   uploadTicket: string | null
   trackUrl: string
+  preview: boolean
+  fileStatus: 'pending' | 'saved' | 'zalo'
 }
 
 /** Bước 1: ghi đơn (không kèm file) qua Worker cùng origin. */
 export async function createOrder(meta: OrderMeta, fetchFn: typeof fetch = fetch): Promise<CreatedOrder> {
-  let res: { ok?: boolean; error?: string; orderCode?: string; uploadTicket?: string | null; trackUrl?: string }
+  let res: { ok?: boolean; error?: string; orderCode?: string; uploadTicket?: string | null; trackUrl?: string
+    preview?: boolean
+    fileStatus?: string
+  }
   try {
     const r = await fetchFn('/api/orders', {
       method: 'POST',
@@ -28,6 +33,8 @@ export async function createOrder(meta: OrderMeta, fetchFn: typeof fetch = fetch
     orderCode: res.orderCode ?? meta.orderCode,
     uploadTicket: res.uploadTicket ?? null,
     trackUrl: res.trackUrl ?? '',
+    preview: res.preview === true,
+    fileStatus: res.fileStatus === 'saved' || res.fileStatus === 'zalo' ? res.fileStatus : 'pending',
   }
 }
 

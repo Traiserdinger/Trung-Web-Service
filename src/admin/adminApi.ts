@@ -59,13 +59,19 @@ export interface OrdersPage {
 }
 
 async function call<T>(path: string, init?: { method: string; body?: unknown }): Promise<T> {
-  const res = await fetch(path, {
-    method: init?.method ?? 'GET',
-    credentials: 'same-origin',
-    headers: init?.body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
-    body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
-  })
-  if (res.status === 401) throw new Error(SESSION_EXPIRED)
+  let res: Response
+  try {
+    res = await fetch(path, {
+      method: init?.method ?? 'GET',
+      credentials: 'same-origin',
+      headers: init?.body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+      body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
+    })
+  } catch {
+    // Phiên Access hết hạn: trình duyệt bị chuyển sang trang đăng nhập khác origin nên fetch ném lỗi.
+    throw new Error(SESSION_EXPIRED)
+  }
+  if (res.status === 401 || res.redirected || res.type === 'opaqueredirect') throw new Error(SESSION_EXPIRED)
   let data: { ok?: boolean; error?: string } & Record<string, unknown> = {}
   try {
     data = await res.json()

@@ -120,7 +120,7 @@ export function OrderForm({
   const [errors, setErrors] = useState<CustomerErrors>({})
   const [stage, setStage] = useState<Stage>('idle')
   const [sendError, setSendError] = useState<string | null>(null)
-  const [done, setDone] = useState<{ trackUrl: string; fileUploaded: boolean } | null>(null)
+  const [done, setDone] = useState<{ trackUrl: string; fileUploaded: boolean; preview: boolean } | null>(null)
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
   const sendingRef = useRef(false)
   const turnstileRef = useRef<TurnstileHandle>(null)
@@ -176,7 +176,7 @@ export function OrderForm({
       })
       setStage('sending')
       const r = await submit(payload, { url: contactConfig.appsScriptUrl })
-      setDone({ trackUrl: r.trackUrl, fileUploaded: r.fileUploaded })
+      setDone({ trackUrl: r.trackUrl, fileUploaded: r.fileUploaded, preview: r.preview === true })
       onSent?.()
     } catch (e) {
       setSendError(e instanceof OrderSubmitError ? e.message : 'Không gửi được, kiểm tra mạng và thử lại')
@@ -205,7 +205,10 @@ export function OrderForm({
             ? 'Gửi file qua Zalo kèm mã này để mình bắt đầu xem.'
             : 'Nhắn mã này để chốt đơn. Mình xem file và trả lời bạn qua Zalo.'}
         </p>
-        {!tooBig && !done.fileUploaded && (
+        {!tooBig && done.preview && (
+          <p className="mt-2 max-w-[40ch] text-[15px] font-semibold text-white">Đây là bản thử, không lưu file.</p>
+        )}
+        {!tooBig && !done.preview && !done.fileUploaded && (
           <p className="mt-2 max-w-[40ch] text-[15px] font-semibold text-white">
             Đơn đã được ghi nhận nhưng file chưa gửi được. Gửi file qua Zalo kèm mã này nhé.
           </p>

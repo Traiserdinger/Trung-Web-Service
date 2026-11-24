@@ -28,6 +28,11 @@ describe('OptionsPanel', () => {
     expect(onColorChange).toHaveBeenCalledWith(4)
   })
 
+  it('shows the selected color name as visible caption', () => {
+    render(<OptionsPanel value={base} onChange={vi.fn()} supportReason={null} {...colorProps} colorId={4} />)
+    expect(screen.getByText('Màu: Nâu')).toBeInTheDocument()
+  })
+
   it('disables the color buttons when disabled', () => {
     render(<OptionsPanel value={base} onChange={vi.fn()} supportReason={null} disabled {...colorProps} />)
     for (const b of within(screen.getByRole('group', { name: 'Màu' })).getAllByRole('button')) expect(b).toBeDisabled()

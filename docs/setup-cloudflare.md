@@ -157,6 +157,27 @@ Tạo project Workers Builds thứ hai từ **cùng repo** này: **Workers & Pag
 
 Bản preview (`previews`) cố ý để `APPS_SCRIPT_URL` trống để xem thử không gửi email hay Telegram thật.
 
+**Kiểm tra bản preview có tách khỏi bản thật không (làm một lần, sau lần build preview đầu tiên).** Cấu hình `previews` chưa được thử trên Cloudflare thật, nên hãy tự xác nhận:
+
+1. Mở địa chỉ preview (link do Cloudflare tạo cho nhánh khác `main`) và gửi thử một đơn. Màn hình xong phải có dòng "Đây là bản thử, không lưu file."
+2. Xem các đơn mới nhất trong database **preview**:
+
+   ```powershell
+   npx wrangler d1 execute DB --remote --preview --command "SELECT code FROM orders ORDER BY created_at DESC LIMIT 3"
+   ```
+
+   Mã đơn vừa gửi phải có ở đây.
+3. Chạy lại cùng lệnh nhưng **bỏ `--preview`** để xem database thật `trung-3d`:
+
+   ```powershell
+   npx wrangler d1 execute DB --remote --command "SELECT code FROM orders ORDER BY created_at DESC LIMIT 3"
+   ```
+
+   Mã đơn thử **không được** xuất hiện ở đây.
+4. Kiểm tra Telegram và email: không được có tin nhắn hay email nào về đơn thử.
+
+Nếu đơn thử lại nằm trong database thật, hoặc có Telegram/email gửi đi: **tạm thời đừng dùng preview**. Tắt preview trong Cloudflare (Settings của Worker, phần Previews), hoặc xoá dòng `d1_databases` trong khối `previews` của `wrangler.jsonc` rồi deploy lại, và xoá đơn thử trong trang admin. Sau đó nhờ người rành kỹ thuật xem lại khối `previews`.
+
 Trong `src/config/contactConfig.ts`, `appsScriptUrl` cũng dán **cùng URL Apps Script**. Từ nay trình duyệt chỉ dùng nó để **tải file STL lên** (cần vé do Worker cấp). Đơn hàng thì gửi thẳng cho Worker và lưu trong D1.
 
 Push lên `main` để cả hai Worker deploy lại với các biến mới.

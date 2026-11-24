@@ -12,16 +12,16 @@ const payload = {
   fileBase64: 'AQID',
   customer: { name: 'An', phone: '0913014605', email: '', note: '' },
 } as OrderPayload & { colorId: number }
-const created = (uploadTicket: string | null) =>
+const created = (uploadTicket: string | null, extra: Record<string, unknown> = {}) =>
   vi.fn(async () =>
-    new Response(JSON.stringify({ ok: true, orderCode: payload.orderCode, uploadTicket, trackUrl: '/tra-cuu?ma=P3D-261120-AAAA' })),
+    new Response(JSON.stringify({ ok: true, orderCode: payload.orderCode, uploadTicket, trackUrl: '/tra-cuu?ma=P3D-261120-AAAA', ...extra })),
   ) as unknown as typeof fetch
 
 describe('submitOrder', () => {
   it('có vé → transport được gọi với uploadTicket, không có customer trong body upload', async () => {
     const transport = vi.fn<Transport>(async () => JSON.stringify({ ok: true, orderCode: payload.orderCode }))
     const r = await submitOrder(payload, { url: 'https://x', transport, fetchFn: created('tk') })
-    expect(r).toEqual({ orderCode: payload.orderCode, trackUrl: '/tra-cuu?ma=P3D-261120-AAAA', fileUploaded: true })
+    expect(r).toEqual({ orderCode: payload.orderCode, trackUrl: '/tra-cuu?ma=P3D-261120-AAAA', fileUploaded: true, preview: false })
     const body = JSON.parse(transport.mock.calls[0][1])
     expect(body).toEqual({ orderCode: payload.orderCode, uploadTicket: 'tk', fileName: 'a.stl', fileSize: 3, fileBase64: 'AQID' })
     expect(body.customer).toBeUndefined()
@@ -62,6 +62,20 @@ describe('submitOrder', () => {
     const fetchFn = vi.fn(async () => new Response(JSON.stringify({ ok: false, error: 'Quá nhiều đơn' }))) as unknown as typeof fetch
     await expect(submitOrder(payload, { url: 'https://x', fetchFn })).rejects.toBeInstanceOf(OrderSubmitError)
     expect(NET).toBeTruthy()
+  })
+
+  it('server báo preview → preview true, không upload', async () => {
+    const transport = vi.fn<Transport>()
+    const r = await submitOrder(payload, { url: 'https://x', transport, fetchFn: created(null, { preview: true, fileStatus: 'pending' }) })
+    expect(r).toMatchObject({ preview: true, fileUploaded: false })
+    expect(transport).not.toHaveBeenCalled()
+  })
+
+  it('fileStatus saved (gửi lại đơn cũ) → fileUploaded true, không upload', async () => {
+    const transport = vi.fn<Transport>()
+    const r = await submitOrder(payload, { url: 'https://x', transport, fetchFn: created(null, { preview: false, fileStatus: 'saved' }) })
+    expect(r.fileUploaded).toBe(true)
+    expect(transport).not.toHaveBeenCalled()
   })
 
   it('chưa cấu hình URL Apps Script → đơn vẫn ghi, không upload', async () => {

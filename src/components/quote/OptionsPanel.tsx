@@ -115,6 +115,7 @@ export function OptionsPanel({ value, onChange, supportReason, disabled, colors,
             )
           })}
         </div>
+        <p className="mt-2 text-[13px] text-slate">Màu: {colors.find((c) => c.id === colorId)?.name ?? '—'}</p>
       </Group>
 
       <Group label="Chiều cao lớp" id="opt-layer">

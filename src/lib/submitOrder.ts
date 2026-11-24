@@ -43,10 +43,12 @@ export function fileToBase64(f: Blob): Promise<string> {
 export async function submitOrder(
   p: OrderPayload & { colorId: number },
   opts: { url: string; transport?: Transport; fetchFn?: typeof fetch },
-): Promise<{ orderCode: string; trackUrl: string; fileUploaded: boolean }> {
+): Promise<{ orderCode: string; trackUrl: string; fileUploaded: boolean; preview: boolean }> {
   const { fileBase64, ...meta } = p
   const created = await createOrder(meta, opts.fetchFn)
-  const base = { orderCode: created.orderCode, trackUrl: created.trackUrl }
+  const base = { orderCode: created.orderCode, trackUrl: created.trackUrl, preview: created.preview }
+  // Gửi lại đơn cũ mà file đã lưu rồi: không tải lại, không báo lỗi giả.
+  if (created.fileStatus === 'saved') return { ...base, fileUploaded: true }
   if (!created.uploadTicket || !opts.url) return { ...base, fileUploaded: false }
 
   const transport = opts.transport ?? fetchTransport

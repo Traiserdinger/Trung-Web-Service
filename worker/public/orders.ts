@@ -11,6 +11,9 @@ const MAX_FILE_BYTES = 35 * 1024 * 1024
 const CODE_RE = /^P3D-\d{6}-[A-Z2-9]{4}$/
 const LIMITS = { name: 120, phone: 40, email: 160, note: 1500 } as const
 
+const EMAIL_RE = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/
+const stripSlash = (u: string) => u.replace(/\/+$/, '')
+
 const fail = (error: string) => json({ ok: false, error })
 
 function validate(p: Partial<OrderMeta> | null): string | null {
@@ -21,6 +24,7 @@ function validate(p: Partial<OrderMeta> | null): string | null {
   if (!c || typeof c.name !== 'string' || !c.name.trim() || typeof c.phone !== 'string' || !c.phone.trim()) {
     return 'Thiếu tên hoặc SĐT'
   }
+  if (typeof c.email === 'string' && c.email.trim() && !EMAIL_RE.test(c.email.trim())) return 'Email không hợp lệ'
   if (!Number.isInteger(p.colorId)) return 'Dữ liệu đơn không hợp lệ'
   const st = p.settings as Record<string, unknown> | undefined
   if (!st || typeof st !== 'object' || typeof st.material !== 'string') return 'Dữ liệu đơn không hợp lệ'
@@ -50,11 +54,12 @@ async function verifyTurnstile(secret: string, token: string | null): Promise<bo
 
 async function sendTelegram(env: Env, text: string): Promise<void> {
   if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) return
-  await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+  const res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ chat_id: env.TELEGRAM_CHAT_ID, text, disable_web_page_preview: true }),
   })
+  if (!res.ok) console.error('telegram', res.status)
 }
 
 export async function handleCreateOrder(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -83,16 +88,24 @@ export async function handleCreateOrder(req: Request, env: Env, ctx: ExecutionCo
   const scale = m.scale || 1
   const fileDelivery = m.fileDelivery === 'zalo' ? 'zalo' : 'upload'
   const fingerprint = JSON.stringify([m.settings, customer, fileName, m.fileSize, scale, fileDelivery, m.colorId])
-  const trackUrl = `${env.PUBLIC_SITE_URL}/tra-cuu?ma=${code}`
-  const ticketFor = (size: number) =>
-    env.APPS_SCRIPT_URL ? makeTicket(env.SHARED_SECRET, code, size) : Promise.resolve(null)
+  const trackUrl = `${stripSlash(env.PUBLIC_SITE_URL)}/tra-cuu?ma=${code}`
+  const preview = !env.APPS_SCRIPT_URL
+  const ticketFor = async (size: number): Promise<string | null> => {
+    if (preview) return null
+    try {
+      return await makeTicket(env.SHARED_SECRET, code, size)
+    } catch (err) {
+      console.error('makeTicket', err)
+      return null
+    }
+  }
 
   // Gửi lại cùng mã: y hệt → ok (kèm vé mới nếu file còn chờ); khác → báo rõ.
   const existing = await getOrder(env.DB, code)
   if (existing) {
     if (existing.fingerprint === fingerprint) {
       const uploadTicket = existing.fileStatus === 'pending' ? await ticketFor(existing.fileSize ?? 0) : null
-      return json({ ok: true, orderCode: code, uploadTicket, trackUrl })
+      return json({ ok: true, orderCode: code, uploadTicket, trackUrl, preview, fileStatus: existing.fileStatus })
     }
     return fail(
       `Mã đơn ${code} đã được gửi với nội dung khác. Tải lại trang để tạo đơn mới, hoặc nhắn Zalo để sửa đơn.`,
@@ -149,9 +162,11 @@ export async function handleCreateOrder(req: Request, env: Env, ctx: ExecutionCo
     return fail('Máy chủ gặp lỗi, vui lòng gửi qua Zalo kèm mã đơn')
   }
 
-  const adminUrl = env.ADMIN_SITE_URL ? `${env.ADMIN_SITE_URL}/#/orders/${code}` : '(chưa cấu hình)'
+  const adminUrl = env.ADMIN_SITE_URL ? `${stripSlash(env.ADMIN_SITE_URL)}/#/orders/${code}` : '(chưa cấu hình)'
   const text = formatOwnerMessage(row, adminUrl)
-  ctx.waitUntil(
+  // Bản preview (APPS_SCRIPT_URL rỗng): không báo chủ shop qua Telegram hay email.
+  if (!preview)
+    ctx.waitUntil(
     (async () => {
       try {
         await sendTelegram(env, text)
@@ -167,5 +182,5 @@ export async function handleCreateOrder(req: Request, env: Env, ctx: ExecutionCo
   )
 
   const uploadTicket = fileDelivery === 'upload' ? await ticketFor(m.fileSize) : null
-  return json({ ok: true, orderCode: code, uploadTicket, trackUrl })
+  return json({ ok: true, orderCode: code, uploadTicket, trackUrl, preview, fileStatus: row.fileStatus })
 }
