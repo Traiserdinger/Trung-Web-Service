@@ -1,15 +1,15 @@
 import { useEffect, useState } from 'react'
-import { useFail } from './session.ts'
 import { createColor, listColors, patchColor, type AdminColor } from './adminApi.ts'
-
-const HEX_RE = /^#[0-9a-f]{6}$/i
+import { AddColorForm } from './colors/AddColorForm.tsx'
+import { ColorItem } from './colors/ColorItem.tsx'
+import { useFail } from './session.ts'
+import { PageHeader } from './ui/PageHeader.tsx'
+import { alertCls } from './ui/styles.ts'
 
 export function ColorsPage() {
   const [colors, setColors] = useState<AdminColor[]>([])
   const [error, setError] = useState('')
   const fail = useFail(setError)
-  const [name, setName] = useState('')
-  const [hex, setHex] = useState('#888888')
 
   useEffect(() => {
     let alive = true
@@ -26,9 +26,11 @@ export function ColorsPage() {
     setError('')
     try {
       await fn()
+      return true
     } catch (e) {
       fail(e)
       if (resync) await listColors().then((d) => setColors(d.colors)).catch(() => {})
+      return false
     }
   }
 
@@ -45,45 +47,35 @@ export function ColorsPage() {
       setColors((prev) => prev.map((x) => (x.id === a.id ? ra.color : x.id === b.id ? rb.color : x)).sort((p, q) => p.sort - q.sort || p.id - q.id))
     }, true)
 
-  const add = (e: React.FormEvent) => {
-    e.preventDefault()
-    void run(async () => {
-      const r = await createColor(name.trim(), hex)
+  const add = (name: string, hex: string) =>
+    run(async () => {
+      const r = await createColor(name, hex)
       setColors((prev) => [...prev, r.color])
-      setName('')
     })
-  }
-  const canAdd = name.trim().length >= 1 && name.trim().length <= 30 && HEX_RE.test(hex)
 
+  const shown = colors.filter((c) => c.active === 1).length
   return (
-    <section className="space-y-4">
-      {error && <p role="alert" className="text-alert">{error}</p>}
-      <ul className="space-y-2">
+    <div className="space-y-8">
+      <PageHeader title="Màu nhựa" lead={colors.length ? `${shown} màu đang hiện trên trang báo giá, ${colors.length - shown} màu đang ẩn` : ' '} />
+      {error && (
+        <p role="alert" className={alertCls}>
+          {error}
+        </p>
+      )}
+      <ul className="grid grid-cols-1 border-t border-mist min-[480px]:grid-cols-2 sm:border-l lg:grid-cols-3 xl:grid-cols-4">
         {colors.map((c, i) => (
-          <li key={c.id} className="flex flex-wrap items-center gap-3 rounded-md bg-paper p-3 ring-1 ring-mist">
-            <input type="color" value={c.hex} aria-label={`Màu ${c.name}`} onChange={(e) => void update(c, { hex: e.target.value })} />
-            <span className="min-w-24 font-medium">{c.name}</span>
-            <span className="tnum text-slate">{c.hex}</span>
-            <label className="ml-auto flex items-center gap-2">
-              <input type="checkbox" checked={c.active === 1} onChange={(e) => void update(c, { active: e.target.checked })} />
-              {c.active === 1 ? 'Đang bật' : 'Đang ẩn'}
-            </label>
-            <button type="button" aria-label={`Đưa ${c.name} lên`} disabled={i === 0} onClick={() => void move(i, -1)} className="rounded px-2 py-1 ring-1 ring-mist disabled:opacity-40">↑</button>
-            <button type="button" aria-label={`Đưa ${c.name} xuống`} disabled={i === colors.length - 1} onClick={() => void move(i, 1)} className="rounded px-2 py-1 ring-1 ring-mist disabled:opacity-40">↓</button>
-          </li>
+          <ColorItem
+            key={c.id}
+            c={c}
+            first={i === 0}
+            last={i === colors.length - 1}
+            onHex={(hex) => void update(c, { hex })}
+            onActive={(active) => void update(c, { active })}
+            onMove={(dir) => void move(i, dir)}
+          />
         ))}
       </ul>
-      <form onSubmit={add} className="flex flex-wrap items-end gap-3 rounded-md bg-paper p-4 ring-1 ring-mist">
-        <label className="block">
-          <span className="text-slate">Tên màu</span>
-          <input value={name} maxLength={30} onChange={(e) => setName(e.target.value)} className="mt-1 block rounded-md bg-fog px-3 py-2" />
-        </label>
-        <label className="block">
-          <span className="text-slate">Mã màu</span>
-          <input type="color" value={hex} onChange={(e) => setHex(e.target.value)} className="mt-1 block h-10" />
-        </label>
-        <button type="submit" disabled={!canAdd} className="rounded-md bg-solder-fill px-4 py-2 font-medium text-white disabled:opacity-50">Thêm màu</button>
-      </form>
-    </section>
+      <AddColorForm onAdd={add} />
+    </div>
   )
 }

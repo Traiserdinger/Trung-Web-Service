@@ -129,3 +129,13 @@ export async function checkSession(): Promise<boolean> {
     return false
   }
 }
+
+export interface Stats {
+  byStatus: Record<OrderStatus, number>
+  last7Days: number
+  estimate30Days: number
+  pendingFiles: number
+  attention: OrderListItem[]
+}
+
+export const getStats = () => call<Stats>('/api/stats')

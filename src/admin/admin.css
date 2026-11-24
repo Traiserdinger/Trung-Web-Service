@@ -1,0 +1,171 @@
+/*
+ * Khối isometric dựng bằng CSS 3D (không dùng three.js), xem docs/design/2026-11-25-admin-design.md.
+ * Mặt phẳng nằm nghiêng kiểu isometric; khối có mặt trên, hai mặt bên và bóng mềm trên nền.
+ */
+.iso {
+  position: relative;
+  flex: none;
+}
+
+.iso-plane {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--s);
+  height: var(--s);
+  margin: calc(var(--s) / -2) 0 0 calc(var(--s) / -2);
+  transform: translateY(calc(var(--h) * 0.433)) rotateX(60deg) rotateZ(45deg);
+  transform-style: preserve-3d;
+}
+
+.iso-shadow {
+  position: absolute;
+  inset: 4%;
+  border-radius: 14%;
+  background: rgb(27 36 32 / 0.2);
+  filter: blur(calc(var(--s) * 0.09));
+  transform: translate(calc(var(--s) * 0.08), calc(var(--s) * 0.08));
+}
+
+:root[data-theme='dark'] .iso-shadow {
+  background: rgb(0 0 0 / 0.55);
+}
+
+.iso-body {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  transform-origin: 50% 50% 0;
+}
+
+.iso-face {
+  position: absolute;
+  backface-visibility: visible;
+}
+
+/* mặt bên trước-trái (cạnh +y) */
+.iso-left {
+  left: 0;
+  top: calc(var(--s) - var(--h));
+  width: var(--s);
+  height: var(--h);
+  transform-origin: 50% 100%;
+  transform: rotateX(-90deg);
+  background: color-mix(in srgb, var(--c) 80%, #000);
+}
+
+/* mặt bên trước-phải (cạnh +x) */
+.iso-right {
+  top: 0;
+  left: calc(var(--s) - var(--h));
+  width: var(--h);
+  height: var(--s);
+  transform-origin: 100% 50%;
+  transform: rotateY(90deg);
+  background: color-mix(in srgb, var(--c) 64%, #000);
+}
+
+.iso-top {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  transform: translateZ(var(--h));
+  background: var(--c);
+  border-radius: 2px;
+  /* ánh sáng studio trên mép trên: khối tối (nhựa đen) vẫn nổi trên nền tối */
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.1);
+}
+
+:root[data-theme='dark'] .iso-top {
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.16);
+}
+
+/* Tấm sáng (giấy) cần viền Mist để không chìm vào nền */
+.iso[data-tone='paper'] .iso-top {
+  box-shadow: inset 0 0 0 1px var(--color-mist);
+}
+
+.iso[data-tone='paper'] .iso-left {
+  background: color-mix(in srgb, var(--c) 90%, var(--color-ink));
+}
+
+.iso[data-tone='paper'] .iso-right {
+  background: color-mix(in srgb, var(--c) 82%, var(--color-ink));
+}
+
+/* Mép mạ vàng ENIG: bước đang có việc */
+.iso[data-edge='enig'] .iso-top {
+  box-shadow: inset 0 0 0 3px var(--color-enig);
+}
+
+.iso[data-edge='enig'] .iso-left {
+  border-top: 3px solid var(--color-enig);
+}
+
+.iso[data-edge='enig'] .iso-right {
+  border-left: 3px solid var(--color-enig);
+}
+
+/* Khối mọc lên lần lượt khi tải Tổng quan */
+.iso-rise .iso-body {
+  animation: iso-rise 0.8s var(--ease-settle) both;
+  animation-delay: calc(var(--i, 0) * 90ms + 120ms);
+}
+
+.iso-rise .iso-shadow {
+  animation: iso-fade 0.8s var(--ease-settle) both;
+  animation-delay: calc(var(--i, 0) * 90ms + 120ms);
+}
+
+/* Nhún nhẹ khi đổi trạng thái */
+.iso-bump .iso-body {
+  animation: iso-bump 0.6s var(--ease-settle);
+}
+
+@keyframes iso-rise {
+  from {
+    transform: scale3d(1, 1, 0.02);
+  }
+  to {
+    transform: scale3d(1, 1, 1);
+  }
+}
+
+@keyframes iso-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes iso-bump {
+  0% {
+    transform: scale3d(1, 1, 1);
+  }
+  35% {
+    transform: scale3d(1, 1, 0.55);
+  }
+  70% {
+    transform: scale3d(1, 1, 1.15);
+  }
+  100% {
+    transform: scale3d(1, 1, 1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .iso-rise .iso-body,
+  .iso-rise .iso-shadow,
+  .iso-bump .iso-body {
+    animation: none;
+  }
+}
+
+/* Dải dây chuyền cuộn ngang trên điện thoại: ẩn thanh cuộn nhưng vẫn cuộn được */
+.scroll-quiet {
+  scrollbar-width: none;
+}
+
+.scroll-quiet::-webkit-scrollbar {
+  display: none;
+}

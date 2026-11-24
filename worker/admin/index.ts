@@ -3,6 +3,7 @@ import { json } from '../shared/http.ts'
 import { firstAdmin, sessionSecret, handleAuth, verifySession } from './auth.ts'
 import { handleColors } from './colors.ts'
 import { handleOrders } from './orders.ts'
+import { handleStats } from './stats.ts'
 
 export function createAdminHandler() {
   return {
@@ -24,7 +25,10 @@ export function createAdminHandler() {
       if (url.pathname === '/api/auth/me' && req.method === 'GET') return json({ ok: true })
 
       return (
-        (await handleOrders(req, env, url)) ?? (await handleColors(req, env, url)) ?? json({ ok: false }, 404)
+        (await handleOrders(req, env, url)) ??
+        (await handleStats(req, env, url)) ??
+        (await handleColors(req, env, url)) ??
+        json({ ok: false }, 404)
       )
     },
   }

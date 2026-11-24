@@ -233,3 +233,61 @@ export async function updateColor(
   if (sets.length) await db.prepare(`UPDATE colors SET ${sets.join(', ')} WHERE id = ?`).bind(...args, id).run()
   return db.prepare('SELECT id, name, hex, sort, active FROM colors WHERE id = ?').bind(id).first<AdminColor>()
 }
+
+export interface OrderStats {
+  byStatus: Record<string, number>
+  last7Days: number
+  estimate30Days: number
+  pendingFiles: number
+  attention: OrderListItem[]
+}
+
+const LIST_COLS = `code, created_at AS createdAt, order_type AS orderType, customer_name AS customerName,
+  customer_phone AS customerPhone, color_name AS colorName, color_hex AS colorHex,
+  file_status AS fileStatus, status, status_updated_at AS statusUpdatedAt`
+
+const ATTENTION_MAX = 8
+const DAY = 86_400_000
+
+// Số liệu trang Tổng quan. Đơn huỷ không tính vào tạm tính và việc cần làm.
+export async function getStats(db: D1Database, now: Date, statuses: readonly string[]): Promise<OrderStats> {
+  const before = (ms: number) => new Date(now.getTime() - ms).toISOString()
+  const [grouped, recent, sum, pending, pendList, staleList] = await Promise.all([
+    db.prepare('SELECT status, COUNT(*) AS n FROM orders GROUP BY status').all<{ status: string; n: number }>(),
+    db.prepare('SELECT COUNT(*) AS n FROM orders WHERE created_at >= ?').bind(before(7 * DAY)).first<{ n: number }>(),
+    db
+      .prepare(
+        `SELECT COALESCE(SUM(json_extract(estimate, '$.total')), 0) AS n FROM orders
+         WHERE status != 'cancelled' AND created_at >= ? AND json_valid(estimate)
+           AND json_type(estimate, '$.total') IN ('integer', 'real')`,
+      )
+      .bind(before(30 * DAY))
+      .first<{ n: number }>(),
+    db
+      .prepare("SELECT COUNT(*) AS n FROM orders WHERE file_status = 'pending' AND status != 'cancelled'")
+      .first<{ n: number }>(),
+    db
+      .prepare(
+        `SELECT ${LIST_COLS} FROM orders WHERE file_status = 'pending' AND status != 'cancelled'
+         ORDER BY created_at DESC, code DESC LIMIT ${ATTENTION_MAX}`,
+      )
+      .all<OrderListItem>(),
+    db
+      .prepare(
+        `SELECT ${LIST_COLS} FROM orders
+         WHERE status = 'received' AND created_at < ? AND (file_status IS NULL OR file_status != 'pending')
+         ORDER BY created_at DESC, code DESC LIMIT ${ATTENTION_MAX}`,
+      )
+      .bind(before(DAY))
+      .all<OrderListItem>(),
+  ])
+  const byStatus = Object.fromEntries(statuses.map((s) => [s, 0]))
+  for (const r of grouped.results) if (r.status in byStatus) byStatus[r.status] = r.n
+  return {
+    byStatus,
+    last7Days: recent?.n ?? 0,
+    estimate30Days: Math.round(sum?.n ?? 0),
+    pendingFiles: pending?.n ?? 0,
+    attention: [...pendList.results, ...staleList.results].slice(0, ATTENTION_MAX),
+  }
+}
