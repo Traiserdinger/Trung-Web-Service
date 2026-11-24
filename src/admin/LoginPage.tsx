@@ -26,7 +26,7 @@ export function LoginPage({ onLoggedIn }: { onLoggedIn: () => void }) {
     setBusy(true)
     setError('')
     try {
-      await verifyCode(code.trim())
+      await verifyCode(code.replace(/\D/g, ''))
       onLoggedIn()
     } catch (err) {
       setError((err as Error).message)
@@ -51,7 +51,6 @@ export function LoginPage({ onLoggedIn }: { onLoggedIn: () => void }) {
                 onChange={(e) => setCode(e.target.value)}
                 inputMode="numeric"
                 autoComplete="one-time-code"
-                maxLength={6}
                 className="tnum w-full rounded-md bg-paper px-3 py-2 ring-1 ring-mist"
               />
             </label>

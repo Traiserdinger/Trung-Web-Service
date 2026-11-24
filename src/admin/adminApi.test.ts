@@ -8,9 +8,11 @@ it('401 → lỗi SESSION_EXPIRED', async () => {
   await expect(listOrders({ status: '', q: '', page: 1 })).rejects.toThrow(SESSION_EXPIRED)
 })
 
-it('fetch ném lỗi (Access chuyển hướng khác origin) → báo phiên hết hạn', async () => {
+it('fetch ném lỗi (mất mạng) → báo lỗi kết nối, không phải phiên hết hạn', async () => {
   vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')))
-  await expect(listOrders({ status: '', q: '', page: 1 })).rejects.toThrow(SESSION_EXPIRED)
+  const err = await listOrders({ status: '', q: '', page: 1 }).catch((e: Error) => e)
+  expect((err as Error).message).toBe('Không kết nối được máy chủ, kiểm tra mạng và thử lại')
+  expect((err as Error).message).not.toBe(SESSION_EXPIRED)
 })
 
 it('phản hồi bị chuyển hướng (redirected / opaqueredirect) → báo phiên hết hạn', async () => {

@@ -50,3 +50,20 @@ it('requestCode ném lỗi mạng → hiện lỗi, nút bật lại', async () 
   expect(await screen.findByRole('alert')).toHaveTextContent('Failed to fetch')
   expect(screen.getByRole('button', { name: 'Gửi mã tới email' })).toBeEnabled()
 })
+
+it("nhập '123 456' → verifyCode('123456')", async () => {
+  vi.mocked(api.requestCode).mockResolvedValue('ok')
+  vi.mocked(api.verifyCode).mockResolvedValue()
+  render(<LoginPage onLoggedIn={() => {}} />)
+  await userEvent.click(screen.getByRole('button', { name: 'Gửi mã tới email' }))
+  await userEvent.type(await screen.findByLabelText('Mã 6 số'), '123 456')
+  await userEvent.click(screen.getByRole('button', { name: 'Đăng nhập' }))
+  expect(api.verifyCode).toHaveBeenCalledWith('123456')
+})
+
+it('nút bị khoá khi request đang chờ', async () => {
+  vi.mocked(api.requestCode).mockImplementation(() => new Promise(() => {}))
+  render(<LoginPage onLoggedIn={() => {}} />)
+  await userEvent.click(screen.getByRole('button', { name: 'Gửi mã tới email' }))
+  expect(screen.getByRole('button', { name: 'Gửi mã tới email' })).toBeDisabled()
+})

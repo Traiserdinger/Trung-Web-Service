@@ -68,8 +68,7 @@ async function call<T>(path: string, init?: { method: string; body?: unknown }, 
       body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
     })
   } catch {
-    if (auth) throw new Error('Không kết nối được máy chủ, thử lại sau')
-    throw new Error(SESSION_EXPIRED)
+    throw new Error('Không kết nối được máy chủ, kiểm tra mạng và thử lại')
   }
   // Với /api/auth/*, 401 là lỗi nghiệp vụ (sai mã), giữ nguyên chữ của server.
   if (!auth && (res.status === 401 || res.redirected || res.type === 'opaqueredirect')) throw new Error(SESSION_EXPIRED)

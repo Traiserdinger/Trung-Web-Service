@@ -22,7 +22,7 @@ it("hiện badge 'Chưa có file' cho đơn pending", async () => {
 })
 
 it('401 → hiện "Phiên đăng nhập hết hạn"', async () => {
-  vi.mocked(api.listOrders).mockRejectedValue(new Error('Phiên đăng nhập hết hạn, tải lại trang'))
+  vi.mocked(api.listOrders).mockRejectedValue(new Error(api.SESSION_EXPIRED))
   render(<OrdersList />)
   expect(await screen.findByText(/Phiên đăng nhập hết hạn/)).toBeInTheDocument()
 })
