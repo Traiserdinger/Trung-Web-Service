@@ -13,3 +13,16 @@ export const STATUS_LABEL: Record<OrderStatus, string> = {
 
 // 5 bước tiến độ, không có `cancelled`.
 export const PROGRESS: OrderStatus[] = ['received', 'paid', 'printing', 'shipping', 'done']
+
+// Dữ liệu tra cứu công khai: tuyệt đối không có tên, SĐT, email của khách.
+export interface TrackView {
+  code: string
+  createdAt: string
+  material: string
+  colorName: string
+  colorHex: string
+  quantity: number
+  estimateTotal: number | null
+  status: OrderStatus
+  events: { status: OrderStatus; note: string | null; at: string }[]
+}

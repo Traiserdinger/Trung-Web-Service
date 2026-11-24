@@ -1,6 +1,8 @@
 import type { Env } from '../shared/env.ts'
 import { json } from '../shared/http.ts'
+import { handleInternalFile } from './internal.ts'
 import { handleCreateOrder } from './orders.ts'
+import { handleTrack } from './track.ts'
 
 async function listColors(env: Env): Promise<Response> {
   const { results } = await env.DB.prepare(
@@ -15,6 +17,8 @@ export default {
     if (!pathname.startsWith('/api/')) return env.ASSETS.fetch(req)
     if (pathname === '/api/colors' && req.method === 'GET') return listColors(env)
     if (pathname === '/api/orders' && req.method === 'POST') return handleCreateOrder(req, env, ctx)
+    if (pathname === '/api/track' && req.method === 'POST') return handleTrack(req, env)
+    if (pathname === '/api/internal/file' && req.method === 'POST') return handleInternalFile(req, env)
     return json({ ok: false }, 404)
   },
 }
