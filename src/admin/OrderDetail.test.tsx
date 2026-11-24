@@ -50,3 +50,13 @@ it('driveUrl không phải https thì không thành link', async () => {
   await screen.findByText('Dòng thời gian')
   expect(screen.queryByRole('link', { name: /javascript/ })).toBeNull()
 })
+
+it('đổi code mà tải lỗi → không còn hiện đơn cũ', async () => {
+  vi.mocked(api.getOrder).mockReset().mockResolvedValueOnce({ order, events: [ev0] }).mockRejectedValueOnce(new Error('Lỗi 404'))
+  const { rerender } = render(<OrderDetail code={order.code} />)
+  await screen.findByText('Dòng thời gian')
+  rerender(<OrderDetail code="P3D-261124-ZZZZ" />)
+  expect(await screen.findByText('Lỗi 404')).toBeInTheDocument()
+  expect(screen.queryByText('Dòng thời gian')).toBeNull()
+  expect(screen.queryByText(order.code)).toBeNull()
+})

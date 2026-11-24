@@ -20,12 +20,13 @@ export function ColorsPage() {
   }, [])
 
   const replace = (c: AdminColor) => setColors((prev) => prev.map((x) => (x.id === c.id ? c : x)))
-  async function run(fn: () => Promise<void>) {
+  async function run(fn: () => Promise<void>, resync = false) {
     setError('')
     try {
       await fn()
     } catch (e) {
       setError((e as Error).message)
+      if (resync) await listColors().then((d) => setColors(d.colors)).catch(() => {})
     }
   }
 
@@ -40,7 +41,7 @@ export function ColorsPage() {
       if (!b) return
       const [ra, rb] = await Promise.all([patchColor(a.id, { sort: b.sort }), patchColor(b.id, { sort: a.sort })])
       setColors((prev) => prev.map((x) => (x.id === a.id ? ra.color : x.id === b.id ? rb.color : x)).sort((p, q) => p.sort - q.sort || p.id - q.id))
-    })
+    }, true)
 
   const add = (e: React.FormEvent) => {
     e.preventDefault()

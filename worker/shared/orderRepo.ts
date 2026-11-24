@@ -118,6 +118,7 @@ export interface OrderListItem {
   customerPhone: string
   colorName: string | null
   colorHex: string | null
+  fileStatus: string | null
   status: string
   statusUpdatedAt: string
 }
@@ -153,8 +154,8 @@ export async function listOrders(
   const { results } = await db
     .prepare(
       `SELECT code, created_at AS createdAt, order_type AS orderType, customer_name AS customerName,
-        customer_phone AS customerPhone, color_name AS colorName, color_hex AS colorHex, status,
-        status_updated_at AS statusUpdatedAt
+        customer_phone AS customerPhone, color_name AS colorName, color_hex AS colorHex,
+        file_status AS fileStatus, status, status_updated_at AS statusUpdatedAt
        FROM orders${sql} ORDER BY created_at DESC, code DESC LIMIT ${PAGE_SIZE} OFFSET ${(f.page - 1) * PAGE_SIZE}`,
     )
     .bind(...bindArgs)

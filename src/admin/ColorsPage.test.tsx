@@ -25,3 +25,16 @@ it('đổi màu → patchColor(id,{hex}); thêm màu hợp lệ → createColor'
   expect(api.createColor).toHaveBeenCalledWith('Xanh', '#0000ff')
   expect(await screen.findByText('Xanh')).toBeInTheDocument()
 })
+
+it('đổi thứ tự lỗi một nửa → tải lại danh sách và hiện lỗi', async () => {
+  const white: api.AdminColor = { id: 2, name: 'Trắng', hex: '#f2f2f0', sort: 2, active: 1 }
+  vi.mocked(api.listColors).mockReset().mockResolvedValue({ colors: [black, white] })
+  vi.mocked(api.patchColor).mockReset()
+    .mockResolvedValueOnce({ color: { ...black, sort: 2 } })
+    .mockRejectedValueOnce(new Error('Lỗi 500'))
+  const u = userEvent.setup()
+  render(<ColorsPage />)
+  await u.click(await screen.findByRole('button', { name: 'Đưa Đen xuống' }))
+  expect(await screen.findByText('Lỗi 500')).toBeInTheDocument()
+  expect(api.listColors).toHaveBeenCalledTimes(2)
+})

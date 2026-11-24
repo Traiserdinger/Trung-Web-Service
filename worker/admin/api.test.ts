@@ -202,6 +202,7 @@ describe('danh sách', () => {
       const n = String(i).padStart(2, '0')
       await insertOrder(env.DB, row({
         code: `P3D-2501${n}-AAAA`, createdAt: `2025-01-01T00:00:${n}.000Z`, status: i === 5 ? 'printing' : 'received',
+        fileStatus: i === 3 ? 'pending' : null,
         customerName: i === 7 ? 'Lê Văn B' : 'Nguyễn An', customerPhone: i === 9 ? '0987654321' : '0913014605',
       }))
     }
@@ -218,6 +219,7 @@ describe('danh sách', () => {
     expect(p1).toMatchObject({ total: 31, page: 1, pageSize: 30 })
     expect(p1?.orders).toHaveLength(30)
     expect(p1?.orders[0].code).toBe('P3D-250130-AAAA')
+    expect(p1?.orders.find((o: { code: string }) => o.code === 'P3D-250103-AAAA')?.fileStatus).toBe('pending')
     const p2 = (await call(env, 'GET', '/api/orders?page=2')).body
     expect(p2?.orders).toHaveLength(1)
   })

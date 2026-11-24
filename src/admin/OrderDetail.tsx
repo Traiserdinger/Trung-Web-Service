@@ -63,7 +63,12 @@ function Fields({ o }: { o: OrderRow }) {
   )
 }
 
+// key theo mã đơn: đổi đơn thì dựng lại toàn bộ state, không còn dữ liệu đơn cũ.
 export function OrderDetail({ code }: { code: string }) {
+  return <OrderDetailBody key={code} code={code} />
+}
+
+function OrderDetailBody({ code }: { code: string }) {
   const [order, setOrder] = useState<OrderRow | null>(null)
   const [events, setEvents] = useState<OrderEvent[]>([])
   const [error, setError] = useState('')
