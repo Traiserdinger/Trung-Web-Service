@@ -44,6 +44,10 @@ export function formatOwnerMessage(o: OrderRow, adminUrl: string): string {
     const n = num(v)
     return n === null ? '?' : String(Math.round(n))
   }
+  const r1 = (v: unknown) => {
+    const n = num(v)
+    return n === null ? '?' : String(n)
+  }
   const lines: string[] = []
 
   lines.push((o.orderType === 'consult' ? '🟠 CẦN TƯ VẤN ' : '🟢 ĐƠN IN 3D ') + o.code)
@@ -64,8 +68,8 @@ export function formatOwnerMessage(o: OrderRow, adminUrl: string): string {
       (o.customerEmail ? ', ' + oneLine(o.customerEmail) : ''),
   )
   lines.push(
-    `Nhựa ${oneLine(s.material)}, lớp ${s.layerHeight} mm, infill ${s.infillPercent}%, ` +
-      `${s.wallLoops} tường, support ${s.support ? 'có' : 'không'}, SL ${s.quantity}`,
+    `Nhựa ${oneLine(s.material)}, lớp ${r1(s.layerHeight)} mm, infill ${r1(s.infillPercent)}%, ` +
+      `${r1(s.wallLoops)} tường, support ${s.support ? 'có' : 'không'}, SL ${r1(s.quantity)}`,
   )
   lines.push('Màu: ' + oneLine(o.colorName))
   lines.push(`Kích thước: ${r(d.length)} × ${r(d.width)} × ${r(d.height)} mm`)

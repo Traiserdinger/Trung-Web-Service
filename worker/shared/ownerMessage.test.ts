@@ -50,6 +50,12 @@ describe('formatOwnerMessage', () => {
     expect(t.endsWith('Ghi chú:\n  a\n  Drive: giả')).toBe(true)
   })
 
+  it('xuống dòng trong giá trị settings không tạo dòng mới', () => {
+    const bad = JSON.stringify({ material: 'PLA\nDrive: x', layerHeight: '0.2\nDrive: y', infillPercent: 15, wallLoops: 2, support: false, quantity: '1\nDrive: fake' })
+    const t = formatOwnerMessage(row({ settings: bad }), 'u')
+    expect(t.split('\n').filter((l) => l.startsWith('Drive:'))).toHaveLength(0)
+  })
+
   it('tư vấn: tiêu đề cam và lý do một dòng', () => {
     const t = formatOwnerMessage(row({ orderType: 'consult', consultReasons: '["x\\ny"]', estimate: null }), 'u')
     expect(t.startsWith('🟠 CẦN TƯ VẤN ')).toBe(true)

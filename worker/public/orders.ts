@@ -22,6 +22,11 @@ function validate(p: Partial<OrderMeta> | null): string | null {
     return 'Thiếu tên hoặc SĐT'
   }
   if (!Number.isInteger(p.colorId)) return 'Dữ liệu đơn không hợp lệ'
+  const st = p.settings as Record<string, unknown> | undefined
+  if (!st || typeof st !== 'object' || typeof st.material !== 'string') return 'Dữ liệu đơn không hợp lệ'
+  for (const k of ['layerHeight', 'infillPercent', 'wallLoops', 'quantity']) {
+    if (typeof st[k] !== 'number' || !Number.isFinite(st[k])) return 'Dữ liệu đơn không hợp lệ'
+  }
   if (p.fileDelivery !== 'zalo') {
     if (typeof p.fileName !== 'string' || !p.fileName) return 'Thiếu file STL'
     if (typeof p.fileSize !== 'number' || !(p.fileSize > 0)) return 'Thiếu file STL'
@@ -74,9 +79,6 @@ export async function handleCreateOrder(req: Request, env: Env, ctx: ExecutionCo
   if (!phone) return fail('Số Zalo/SĐT không hợp lệ')
   customer.phone = phone
 
-  const color = await getColor(env.DB, m.colorId)
-  if (!color || !color.active) return fail('Màu đã chọn không còn, vui lòng chọn lại')
-
   const code = m.orderCode
   const scale = m.scale || 1
   const fileDelivery = m.fileDelivery === 'zalo' ? 'zalo' : 'upload'
@@ -96,6 +98,9 @@ export async function handleCreateOrder(req: Request, env: Env, ctx: ExecutionCo
       `Mã đơn ${code} đã được gửi với nội dung khác. Tải lại trang để tạo đơn mới, hoặc nhắn Zalo để sửa đơn.`,
     )
   }
+
+  const color = await getColor(env.DB, m.colorId)
+  if (!color || !color.active) return fail('Màu đã chọn không còn, vui lòng chọn lại')
 
   if (env.TURNSTILE_SECRET && !(await verifyTurnstile(env.TURNSTILE_SECRET, m.turnstileToken))) {
     return fail('Xác minh chống spam thất bại')

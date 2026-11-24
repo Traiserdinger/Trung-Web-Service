@@ -120,8 +120,24 @@ describe('POST /api/orders', () => {
       expect(typeof body.uploadTicket).toBe('string')
     }
     expect(tg()).toHaveLength(before)
+    expect(aps()).toHaveLength(1)
     const n = await env.DB.prepare('SELECT COUNT(*) AS n FROM rate_hits').first<{ n: number }>()
     expect(n?.n).toBe(1)
+  })
+
+  it('gửi lại y hệt sau khi màu bị ẩn: vẫn ok với vé mới', async () => {
+    const env = makeEnv(full)
+    await post(env, meta())
+    await env.DB.prepare('UPDATE colors SET active=0 WHERE id=3').run()
+    const { body } = await post(env, meta())
+    expect(body.ok).toBe(true)
+    expect(typeof body.uploadTicket).toBe('string')
+  })
+
+  it('settings có giá trị không phải số bị từ chối', async () => {
+    const env = makeEnv(full)
+    const settings = { ...meta().settings, quantity: '1\nDrive: fake' as unknown as number }
+    expect((await post(env, meta({ settings }))).body).toEqual({ ok: false, error: 'Dữ liệu đơn không hợp lệ' })
   })
 
   it('gửi lại cùng mã khác nội dung: lỗi', async () => {
