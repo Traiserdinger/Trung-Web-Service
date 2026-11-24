@@ -1,16 +1,48 @@
 {
   "$schema": "https://unpkg.com/wrangler@4.165.0/config-schema.json",
-  // Site tĩnh: Workers chỉ phục vụ thư mục dist sau `npm run build`.
+  // Worker công khai: phục vụ site tĩnh trong dist và các API /api/*.
   // Trước đây Cloudflare tự sinh cấu hình này lúc deploy nhánh main; `wrangler preview`
   // (build cho nhánh khác và PR) bắt buộc có file cấu hình kèm khối "previews".
   "name": "trung-pcb-3d",
+  "main": "worker/public/index.ts",
   "compatibility_date": "2026-11-18",
   "observability": {
     "enabled": true
   },
   "assets": {
     "directory": "./dist",
-    "not_found_handling": "single-page-application"
+    "not_found_handling": "single-page-application",
+    "binding": "ASSETS",
+    // Chỉ /api/* chạy Worker trước; mọi đường khác trả thẳng tài nguyên tĩnh.
+    "run_worker_first": ["/api/*"]
   },
-  "previews": {}
+  // database_id là giá trị tạm: chủ site thay bằng id thật sau khi chạy `wrangler d1 create trung-3d`.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "trung-3d",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  // Secrets (đặt bằng `wrangler secret put`): SHARED_SECRET, TURNSTILE_SECRET, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID.
+  "vars": {
+    "PUBLIC_SITE_URL": "",
+    "ADMIN_SITE_URL": "",
+    "APPS_SCRIPT_URL": ""
+  },
+  "previews": {
+    // Bản preview dùng DB riêng và APPS_SCRIPT_URL rỗng (không gửi Telegram, Gmail, Drive).
+    "d1_databases": [
+      {
+        "binding": "DB",
+        "database_name": "trung-3d-preview",
+        "database_id": "00000000-0000-0000-0000-000000000000",
+        "migrations_dir": "migrations"
+      }
+    ],
+    "vars": {
+      "APPS_SCRIPT_URL": ""
+    }
+  }
 }
