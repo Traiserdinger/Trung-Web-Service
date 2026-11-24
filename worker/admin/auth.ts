@@ -10,6 +10,9 @@ const SESSION_TTL_SEC = 604_800
 const COOKIE = 'admin_session'
 const COOKIE_ATTRS = 'HttpOnly; Secure; SameSite=Strict; Path=/'
 
+// Secret đã cắt khoảng trắng; dùng ở mọi nơi để cổng và cookie luôn khớp.
+export const sessionSecret = (env: Env): string => env.ADMIN_SESSION_SECRET?.trim() ?? ''
+
 // Email đầu tiên trong ADMIN_EMAILS (chữ thường): nhận mã và ràng buộc phiên.
 export function firstAdmin(env: Env): string {
   return (env.ADMIN_EMAILS ?? '').split(',').map((e) => e.trim().toLowerCase()).find(Boolean) ?? ''
@@ -43,7 +46,8 @@ export async function verifySession(
     const expStr = value.slice(0, dot)
     const exp = Number(expStr)
     if (!Number.isInteger(exp) || String(exp) !== expStr) return false
-    if (Math.floor(now / 1000) > exp) return false
+    const nowSec = Math.floor(now / 1000)
+    if (nowSec > exp || exp > nowSec + SESSION_TTL_SEC) return false
     const expected = await hmacHex(secret, `session|${email}|${exp}`)
     return safeEqual(expected, value.slice(dot + 1))
   } catch {
@@ -63,8 +67,12 @@ function newCode(): string {
 const codeHash = (secret: string, code: string) => hmacHex(secret, `code|${code}`)
 const BAD_CODE = { ok: false, error: 'Mã không đúng hoặc đã hết hạn' }
 
-async function requestCode(env: Env, now: number): Promise<Response> {
-  if (!(await hit(env.DB, 'admin-code', 3, CODE_TTL_SEC, now))) {
+async function requestCode(req: Request, env: Env, now: number): Promise<Response> {
+  const ip = req.headers.get('CF-Connecting-IP') || 'unknown'
+  if (
+    !(await hit(env.DB, 'admin-code-ip:' + ip, 3, CODE_TTL_SEC, now)) ||
+    !(await hit(env.DB, 'admin-code-day', 20, 86_400, now))
+  ) {
     return json({ ok: false, error: 'Bạn đã yêu cầu quá nhiều mã, thử lại sau 10 phút' }, 429)
   }
   const code = newCode()
@@ -72,7 +80,7 @@ async function requestCode(env: Env, now: number): Promise<Response> {
   await env.DB.batch([
     env.DB.prepare('DELETE FROM admin_codes'),
     env.DB.prepare('INSERT INTO admin_codes (code_hash, expires_at) VALUES (?, ?)').bind(
-      await codeHash(env.ADMIN_SESSION_SECRET!, code),
+      await codeHash(sessionSecret(env), code),
       Math.floor(now / 1000) + CODE_TTL_SEC,
     ),
   ])
@@ -97,13 +105,18 @@ async function verifyCode(req: Request, env: Env, now: number): Promise<Response
   const code = typeof body?.code === 'string' ? body.code.replace(/\s+/g, '') : ''
   if (!/^\d{6}$/.test(code)) return json(BAD_CODE, 401)
 
+  // Chiếm một lượt thử nguyên tử trước khi so sánh: request song song không vượt trần 5 lần.
   const row = await env.DB
-    .prepare('SELECT id, code_hash, attempts FROM admin_codes WHERE expires_at > ? ORDER BY id DESC LIMIT 1')
-    .bind(Math.floor(now / 1000))
+    .prepare(
+      `UPDATE admin_codes SET attempts = attempts + 1
+       WHERE id = (SELECT id FROM admin_codes WHERE expires_at > ? AND attempts < ? ORDER BY id DESC LIMIT 1)
+       RETURNING id, code_hash, attempts`,
+    )
+    .bind(Math.floor(now / 1000), MAX_ATTEMPTS)
     .first<{ id: number; code_hash: string; attempts: number }>()
   if (!row) return json(BAD_CODE, 401)
 
-  const secret = env.ADMIN_SESSION_SECRET!
+  const secret = sessionSecret(env)
   if (safeEqual(await codeHash(secret, code), row.code_hash)) {
     // Xoá nguyên tử: chỉ một request thắng khi hai request cùng dùng một mã.
     const del = await env.DB.prepare('DELETE FROM admin_codes WHERE id = ?').bind(row.id).run()
@@ -112,11 +125,7 @@ async function verifyCode(req: Request, env: Env, now: number): Promise<Response
     res.headers.append('Set-Cookie', await makeSessionCookie(secret, firstAdmin(env), now))
     return res
   }
-
-  await env.DB.prepare('UPDATE admin_codes SET attempts = attempts + 1 WHERE id = ?').bind(row.id).run()
-  if (row.attempts + 1 >= MAX_ATTEMPTS) {
-    await env.DB.prepare('DELETE FROM admin_codes WHERE id = ?').bind(row.id).run()
-  }
+  if (row.attempts >= MAX_ATTEMPTS) await env.DB.prepare('DELETE FROM admin_codes WHERE id = ?').bind(row.id).run()
   return json(BAD_CODE, 401)
 }
 
@@ -125,7 +134,7 @@ export async function handleAuth(req: Request, env: Env, url: URL, now = Date.no
   if (req.method !== 'POST') return null
   switch (url.pathname) {
     case '/api/auth/request-code':
-      return requestCode(env, now)
+      return requestCode(req, env, now)
     case '/api/auth/verify':
       return verifyCode(req, env, now)
     case '/api/auth/logout': {

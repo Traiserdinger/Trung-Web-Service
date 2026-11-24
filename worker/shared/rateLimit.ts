@@ -10,13 +10,14 @@ export async function hit(
 ): Promise<boolean> {
   const cutoff = now - windowSec * 1000
   await db.prepare('DELETE FROM rate_hits WHERE key = ? AND at <= ?').bind(key, cutoff).run()
-  const row = await db
-    .prepare('SELECT COUNT(*) AS n FROM rate_hits WHERE key = ?')
-    .bind(key)
-    .first<{ n: number }>()
-  if ((row?.n ?? 0) >= limit) return false
-  await db.prepare('INSERT INTO rate_hits (key, at) VALUES (?, ?)').bind(key, now).run()
-  return true
+  // Một câu lệnh nguyên tử: đếm và chèn cùng lúc nên request song song không vượt giới hạn.
+  const r = await db
+    .prepare(
+      'INSERT INTO rate_hits (key, at) SELECT ?, ? WHERE (SELECT COUNT(*) FROM rate_hits WHERE key = ? AND at > ?) < ?',
+    )
+    .bind(key, now, key, cutoff, limit)
+    .run()
+  return r.meta.changes === 1
 }
 
 // Hoàn lại lượt mới nhất của key (khi lưu đơn thất bại).

@@ -1,6 +1,6 @@
 import type { Env } from '../shared/env.ts'
 import { json } from '../shared/http.ts'
-import { firstAdmin, handleAuth, verifySession } from './auth.ts'
+import { firstAdmin, sessionSecret, handleAuth, verifySession } from './auth.ts'
 import { handleColors } from './colors.ts'
 import { handleOrders } from './orders.ts'
 
@@ -11,7 +11,7 @@ export function createAdminHandler() {
       if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(req)
 
       // Đóng kín: thiếu cấu hình thì từ chối mọi /api, kể cả /api/auth/*.
-      const secret = env.ADMIN_SESSION_SECRET?.trim()
+      const secret = sessionSecret(env)
       const admin = firstAdmin(env)
       if (!secret || !admin) return json({ ok: false }, 401)
 

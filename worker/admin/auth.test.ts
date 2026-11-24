@@ -66,12 +66,20 @@ describe('request-code', () => {
     const row = await env.DB.prepare('SELECT code_hash FROM admin_codes').first<{ code_hash: string }>()
     expect(row!.code_hash).not.toContain(code)
   })
-  it('lần thứ 4 trong 600 s → 429', async () => {
+  it('lần thứ 4 cùng IP trong 600 s → 429; IP khác vẫn được', async () => {
     const env = authEnv()
     for (let i = 0; i < 3; i++) expect((await auth(env, '/api/auth/request-code', {})).res.status).toBe(200)
     const r = await auth(env, '/api/auth/request-code', {})
     expect(r.res.status).toBe(429)
     expect(r.body).toEqual({ ok: false, error: 'Bạn đã yêu cầu quá nhiều mã, thử lại sau 10 phút' })
+    expect((await auth(env, '/api/auth/request-code', {}, NOW, '2.2.2.2')).res.status).toBe(200)
+  })
+  it('yêu cầu thứ 21 trong một ngày → 429', async () => {
+    const env = authEnv()
+    for (let i = 0; i < 20; i++) {
+      expect((await auth(env, '/api/auth/request-code', {}, NOW, `9.9.9.${i}`)).res.status).toBe(200)
+    }
+    expect((await auth(env, '/api/auth/request-code', {}, NOW, '9.9.9.99')).res.status).toBe(429)
   })
   it('Apps Script lỗi → vẫn 200 cùng message', async () => {
     fetchMock.mockRejectedValue(new Error('boom'))
@@ -116,6 +124,19 @@ describe('verify', () => {
     for (let i = 0; i < 5; i++) expect((await auth(env, '/api/auth/verify', { code: wrong })).res.status).toBe(401)
     expect(await count(env)).toBe(0)
     expect((await auth(env, '/api/auth/verify', { code })).res.status).toBe(401)
+  })
+  it('20 lần đoán sai song song rồi mã đúng → 401, mã đã huỷ', async () => {
+    const env = authEnv()
+    const code = await requestCode(env)
+    const wrong = code === '000000' ? '111111' : '000000'
+    // Mỗi IP một lượt để không chạm giới hạn 10 lần/IP.
+    const rs = await Promise.all(
+      Array.from({ length: 20 }, (_, i) => auth(env, '/api/auth/verify', { code: wrong }, NOW, `7.7.7.${i}`)),
+    )
+    expect(rs.every((r) => r.res.status === 401)).toBe(true)
+    expect((await auth(env, '/api/auth/verify', { code }, NOW, '8.8.8.8')).res.status).toBe(401)
+    const row = await env.DB.prepare('SELECT attempts FROM admin_codes').first<{ attempts: number }>()
+    expect(row === null || row.attempts >= 5).toBe(true)
   })
   it('mã quá 600 s → 401', async () => {
     const env = authEnv()
@@ -162,6 +183,8 @@ describe('verifySession', () => {
     expect(await verifySession('s', 'a@x.com', c, NOW + 604_801_000)).toBe(false)
     expect(await verifySession('t', 'a@x.com', c, NOW)).toBe(false)
     expect(await verifySession('s', 'b@y.com', c, NOW)).toBe(false)
+    const far = val(await makeSessionCookie('s', 'a@x.com', NOW + 10_000_000))
+    expect(await verifySession('s', 'a@x.com', far, NOW)).toBe(false)
     for (const h of ['admin_session=abc', 'admin_session=', '', null, ';;;', 'admin_session=1.2.3', 'admin_session=x.y']) {
       expect(await verifySession('s', 'a@x.com', h, NOW)).toBe(false)
     }
@@ -170,6 +193,16 @@ describe('verifySession', () => {
 
 describe('cổng trong handler', () => {
   const handler = createAdminHandler()
+  it('secret có xuống dòng cuối → đăng nhập và /api/auth/me vẫn 200', async () => {
+    const env = authEnv({ ADMIN_SESSION_SECRET: 's\n' })
+    await handler.fetch(req('/api/auth/request-code', {}), env, fakeCtx())
+    const code = /(\d{6})$/.exec(lastEnvelope().data.subject)![1]
+    const v = await handler.fetch(req('/api/auth/verify', { code }), env, fakeCtx())
+    expect(v.status).toBe(200)
+    const cookie = /admin_session=[^;]*/.exec(v.headers.get('set-cookie')!)![0]
+    const me = await handler.fetch(new Request(ORIGIN + '/api/auth/me', { headers: { cookie } }), env, fakeCtx())
+    expect(me.status).toBe(200)
+  })
   it('thiếu ADMIN_SESSION_SECRET → request-code 401', async () => {
     const env = authEnv({ ADMIN_SESSION_SECRET: '' })
     const res = await handler.fetch(req('/api/auth/request-code', {}), env, fakeCtx())
