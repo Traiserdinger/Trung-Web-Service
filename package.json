@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck:worker": "tsc -p tsconfig.worker.json --noEmit",
-    "deploy": "wrangler d1 migrations apply DB --remote && wrangler deploy"
+    "deploy": "wrangler d1 migrations apply DB --remote && wrangler deploy",
+    "deploy:admin": "vite build --config vite.admin.config.ts && wrangler deploy -c wrangler.admin.jsonc"
   },
   "dependencies": {
     "react": "^19.3.1",
