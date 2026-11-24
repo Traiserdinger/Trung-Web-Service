@@ -14,7 +14,8 @@ Hiện tại mỗi đơn là một thư mục trên Google Drive (file STL + `or
 ## 2. Mục tiêu
 
 - D1 (Cloudflare, miễn phí) là nơi lưu sự thật về đơn: thông tin khách, thông số in, màu, giá tạm tính, link Drive, trạng thái và lịch sử trạng thái.
-- 5 trạng thái theo thứ tự: **Đã nhận đơn → Đã thanh toán → Đang in 3D → Đang giao hàng → Hoàn tất**.
+- 5 trạng thái theo thứ tự: **Đã nhận đơn → Đã thanh toán → Đang in 3D → Đang giao hàng → Hoàn tất**, cộng trạng thái ngoài luồng **Đã huỷ**.
+- Trung **xoá được đơn rác** trong trang quản trị.
 - Trang tra cứu công khai: khách nhập **mã đơn + SĐT** để xem tiến độ. Không có tài khoản khách.
 - Trang quản trị `/admin` (chỉ Trung): danh sách đơn, chi tiết đơn, đổi trạng thái (kèm ghi chú tuỳ chọn), quản lý màu.
 - Khi Trung đổi trạng thái và đơn có email: gửi email cho khách gồm trạng thái mới, thời điểm, ghi chú (nếu có), link tới trang tra cứu.
@@ -113,7 +114,7 @@ orders
   color_id INTEGER, color_name TEXT, color_hex TEXT   -- chụp lại lúc đặt, để sửa màu sau không làm đổi đơn cũ
   file_name, file_size, file_delivery ('upload'|'zalo'), file_status ('pending'|'saved'|'zalo'), drive_url
   fingerprint TEXT        -- như fingerprint_() để nhận ra gửi lại y hệt
-  status TEXT             -- received|paid|printing|shipping|done
+  status TEXT             -- received|paid|printing|shipping|done|cancelled
   status_updated_at TEXT
 
 order_events
@@ -129,6 +130,8 @@ Migration SQL nằm trong repo (`migrations/`), chạy bằng `wrangler d1 migra
 
 ### 7.4 Trạng thái
 
+- **Đã huỷ** (`cancelled`): dùng cho đơn thật khách không làm nữa. Đơn vẫn trong lịch sử, khách có email nhận email báo huỷ (kèm ghi chú lý do nếu Trung nhập), trang tra cứu hiện "Đơn đã huỷ" thay cho dòng tiến độ. Trung có thể mở lại đơn bằng cách chọn lại một trạng thái khác. (Trung chọn phương án C.)
+- **Xoá đơn**: dùng cho đơn rác. Xoá hẳn khỏi D1 (đơn và `order_events`), có hộp xác nhận nhập lại mã đơn, không gửi email. Không xoá thư mục Drive (Trung tự xoá trên Drive nếu muốn). *(Quyết định của Claude về cách xác nhận và việc không đụng Drive.)*
 - Thứ tự cố định 5 bước. Admin có thể chọn bất kỳ trạng thái nào (kể cả lùi lại khi bấm nhầm); mỗi lần đổi ghi một dòng `order_events`. *(Quyết định của Claude.)*
 - Khi đổi: nếu đơn có email → Worker gọi Apps Script `action: 'notifyStatus'` (HMAC) để gửi Gmail. Lỗi gửi mail không chặn việc đổi trạng thái; ghi `email_sent = 0` và hiện cho admin.
 - Email: tiêu đề `[In 3D Trung] Đơn P3D-… : Đang in 3D`; nội dung gồm trạng thái, thời điểm, ghi chú của Trung, link `https://<web>/tra-cuu?ma=P3D-…` (khách vẫn phải nhập SĐT). Ghi chú của Trung chèn dạng text thuần.
@@ -158,7 +161,7 @@ Admin Worker **luôn tự kiểm tra** header `Cf-Access-Jwt-Assertion` trên m�
 
 Chức năng:
 - **Danh sách đơn**: lọc theo trạng thái, tìm theo mã/SĐT/tên, mới nhất trước, phân trang.
-- **Chi tiết đơn**: toàn bộ thông tin, link Drive, cảnh báo `file_status = pending`, lịch sử trạng thái, nút đổi trạng thái + ô ghi chú tuỳ chọn, cho biết email đã gửi hay lỗi.
+- **Chi tiết đơn**: toàn bộ thông tin, link Drive, cảnh báo `file_status = pending`, lịch sử trạng thái, nút đổi trạng thái (gồm "Huỷ đơn") + ô ghi chú tuỳ chọn, cho biết email đã gửi hay lỗi, nút "Xoá đơn rác" (xác nhận bằng cách nhập lại mã đơn).
 - **Màu**: thêm, sửa tên/mã hex (ô chọn màu), bật/ẩn, đổi thứ tự. Không xoá cứng màu đã dùng (chỉ ẩn).
 
 Admin Worker dùng chung repo; giao diện là một entry Vite riêng (dùng lại Tailwind/thành phần hiện có), không nằm trong bundle trang chủ. Thao tác đổi trạng thái gọi Apps Script `notifyStatus` từ admin Worker.
