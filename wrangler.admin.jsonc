@@ -1,7 +1,7 @@
 {
   "$schema": "https://unpkg.com/wrangler@4.165.0/config-schema.json",
   // Worker admin: phục vụ UI quản trị trong dist-admin và API /api/* cho Trung.
-  // Phải đặt sau Cloudflare Access (self-hosted app); Worker tự xác minh JWT của Access.
+  // Đăng nhập bằng mã một lần gửi qua email (ADMIN_EMAILS), phiên bằng cookie ký HMAC.
   "name": "trung-3d-admin",
   "main": "worker/admin/index.ts",
   "compatibility_date": "2026-11-18",
@@ -23,12 +23,8 @@
       "migrations_dir": "migrations"
     }
   ],
-  // Secret (wrangler secret put -c wrangler.admin.jsonc): SHARED_SECRET (cùng giá trị Worker công khai).
+  // Secret (wrangler secret put -c wrangler.admin.jsonc): SHARED_SECRET (cùng giá trị Worker công khai), ADMIN_SESSION_SECRET.
   "vars": {
-    // Ví dụ: "yourteam.cloudflareaccess.com"
-    "ACCESS_TEAM_DOMAIN": "",
-    // Application Audience (AUD) tag của ứng dụng Access
-    "ACCESS_AUD": "",
     // Email được phép, phân tách bằng dấu phẩy
     "ADMIN_EMAILS": "minhlaductrung@gmail.com",
     "APPS_SCRIPT_URL": "https://script.google.com/macros/s/AKfycbyvHRfr8muFpvZDPBpha7SIMfya90zrxprtobUleQaB8JPxewNo9rzOpszdGGFpO0lw2Q/exec",

@@ -8,7 +8,6 @@ export interface Env {
   TURNSTILE_SECRET?: string
   TELEGRAM_BOT_TOKEN?: string
   TELEGRAM_CHAT_ID?: string
-  ACCESS_TEAM_DOMAIN?: string
-  ACCESS_AUD?: string
+  ADMIN_SESSION_SECRET?: string
   ADMIN_EMAILS?: string
 }

@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { insertOrder, type OrderRow } from '../shared/orderRepo.ts'
 import { fakeAssets, fakeCtx, makeEnv } from '../test/env.ts'
+import { makeSessionCookie } from './auth.ts'
 import { createAdminHandler } from './index.ts'
 
 const ORIGIN = 'https://admin.example.com'
@@ -18,18 +19,18 @@ const row = (over: Partial<OrderRow> = {}): OrderRow => ({
 
 const adminEnv = () =>
   makeEnv({
-    ACCESS_TEAM_DOMAIN: 'team.cloudflareaccess.com', ACCESS_AUD: 'aud', ADMIN_EMAILS: 'Trung@x.com, other@x.com',
+    ADMIN_SESSION_SECRET: 'sess', ADMIN_EMAILS: 'Trung@x.com, other@x.com',
     APPS_SCRIPT_URL: 'https://script/exec', PUBLIC_SITE_URL: 'https://site',
   })
 
-// Stub xác minh: token "good" → trung@x.com (hoa/thường khác ADMIN_EMAILS), "stranger" → email lạ.
-const verify = async (t: string) =>
-  t === 'good' ? { email: 'TRUNG@x.com' } : t === 'stranger' ? { email: 'who@x.com' } : null
-const handler = createAdminHandler({ verify })
+const handler = createAdminHandler()
+// Cookie phiên thật cho email đầu tiên (chữ thường) của ADMIN_EMAILS.
+const sessionCookie = async (secret = 'sess', email = 'trung@x.com') =>
+  /admin_session=[^;]*/.exec(await makeSessionCookie(secret, email))![0]
 
 type Env = ReturnType<typeof adminEnv>
 async function call(env: Env, method: string, path: string, body?: unknown, headers: Record<string, string> = {}) {
-  const h: Record<string, string> = { 'Cf-Access-Jwt-Assertion': 'good', Origin: ORIGIN, ...headers }
+  const h: Record<string, string> = { Cookie: await sessionCookie(), Origin: ORIGIN, ...headers }
   if (body !== undefined) h['content-type'] = 'application/json'
   const res = await handler.fetch(
     new Request(ORIGIN + path, { method, headers: h, body: body === undefined ? undefined : JSON.stringify(body) }),
@@ -47,19 +48,24 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('xác thực', () => {
-  it('không có header → 401', async () => {
+  it('không cookie → 401', async () => {
     const env = adminEnv()
     const res = await handler.fetch(new Request(ORIGIN + '/api/orders'), env, fakeCtx())
     expect(res.status).toBe(401)
     expect(await res.json()).toEqual({ ok: false })
   })
-  it('token sai → 401; email không thuộc ADMIN_EMAILS → 401', async () => {
-    const env = adminEnv()
-    expect((await call(env, 'GET', '/api/orders', undefined, { 'Cf-Access-Jwt-Assertion': 'bad' })).res.status).toBe(401)
-    expect((await call(env, 'GET', '/api/orders', undefined, { 'Cf-Access-Jwt-Assertion': 'stranger' })).res.status).toBe(401)
+  it('cookie hợp lệ → GET /api/auth/me 200', async () => {
+    expect((await call(adminEnv(), 'GET', '/api/auth/me')).res.status).toBe(200)
   })
-  it('thiếu cấu hình Access → 401 với mọi /api', async () => {
-    for (const k of ['ACCESS_TEAM_DOMAIN', 'ACCESS_AUD', 'ADMIN_EMAILS'] as const) {
+  it('cookie rác / sai secret / email khác → 401', async () => {
+    const env = adminEnv()
+    expect((await call(env, 'GET', '/api/orders', undefined, { Cookie: 'admin_session=abc' })).res.status).toBe(401)
+    expect((await call(env, 'GET', '/api/orders', undefined, { Cookie: await sessionCookie('other') })).res.status).toBe(401)
+    expect((await call(env, 'GET', '/api/orders', undefined, { Cookie: await sessionCookie('sess', 'other@x.com') })).res.status).toBe(401)
+    expect((await call(env, 'GET', '/api/auth/me', undefined, { Cookie: 'admin_session=abc' })).res.status).toBe(401)
+  })
+  it('thiếu ADMIN_SESSION_SECRET hoặc ADMIN_EMAILS → 401 với mọi /api', async () => {
+    for (const k of ['ADMIN_SESSION_SECRET', 'ADMIN_EMAILS'] as const) {
       const env = adminEnv()
       env[k] = ''
       expect((await call(env, 'GET', '/api/orders')).res.status).toBe(401)
@@ -70,7 +76,7 @@ describe('xác thực', () => {
     await insertOrder(env.DB, row())
     const bad = await call(env, 'POST', `/api/orders/${CODE}/status`, { status: 'paid' }, { Origin: 'https://evil.com' })
     expect(bad.res.status).toBe(403)
-    const h = { 'Cf-Access-Jwt-Assertion': 'good', 'content-type': 'application/json' }
+    const h = { Cookie: await sessionCookie(), 'content-type': 'application/json' }
     const none = await handler.fetch(
       new Request(ORIGIN + `/api/orders/${CODE}/status`, { method: 'POST', headers: h, body: '{"status":"paid"}' }),
       env, fakeCtx(),
