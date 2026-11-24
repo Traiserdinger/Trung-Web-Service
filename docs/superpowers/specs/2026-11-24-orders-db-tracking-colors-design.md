@@ -200,3 +200,37 @@ Cập nhật `README.md` và `docs/setup-apps-script.md`; thêm `docs/setup-clou
 - Cấu trúc thư mục Worker (`worker/` hay `src/server/`), router tự viết hay thư viện nhỏ (ví dụ Hono).
 - Router phía client cho `/tra-cuu` và `/admin` (hiện SPA chưa có router).
 - Phân trang, giao diện chi tiết admin, theo phong cách giao diện hiện có.
+
+## 9. Bổ sung 2026-11-24: đăng nhập admin bằng mã qua email (thay Cloudflare Access)
+
+**Lý do:** Cloudflare đòi phương thức thanh toán để bật Zero Trust Free, mà Trung không có thẻ. Trung chọn phương án B: đăng nhập bằng mã một lần gửi qua email. Phương án này thay §6.2 A và phần Access ở §7.6.
+
+**Các phương án đã cân nhắc:**
+- A. Mở thẻ ảo để bật Access: không phải sửa code. Trung không chọn.
+- **B. Mã 6 số gửi qua Gmail (Trung chọn):** không có mật khẩu nào.
+- C. Đăng nhập bằng mật khẩu: kém an toàn hơn B và phải xử lý chuyện quên mật khẩu. Loại.
+
+**Thiết kế:**
+- **Gửi mã** `POST /api/auth/request-code` (body rỗng):
+  - Sinh mã 6 số bằng `crypto.getRandomValues`.
+  - Lưu `HMAC(ADMIN_SESSION_SECRET, code)` và thời điểm hết hạn (10 phút) vào bảng D1 `admin_codes` (migration `0002`, chỉ thêm bảng mới).
+  - Gửi tới địa chỉ đầu tiên trong `ADMIN_EMAILS`, qua Apps Script `notifyStatus` (dùng lại action gửi mail đã có, không phải sửa Apps Script).
+  - Mỗi lần gửi mã mới thì huỷ mã cũ.
+  - Giới hạn 3 lần gửi trong 10 phút.
+  - Luôn trả cùng một câu "Đã gửi mã nếu email hợp lệ".
+- **Kiểm tra mã** `POST /api/auth/verify {code}`:
+  - Mỗi mã chỉ được thử tối đa 5 lần sai, sau đó mã bị huỷ. Giới hạn thêm 10 lần thử trong 10 phút theo IP.
+  - So sánh theo thời gian hằng định. Mã đúng thì xoá ngay, nên chỉ dùng được một lần.
+  - Thành công thì đặt cookie `admin_session` = `exp.HMAC(ADMIN_SESSION_SECRET, "session|"+email+"|"+exp)`, với các thuộc tính `HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=604800` (7 ngày).
+- **Đăng xuất** `POST /api/auth/logout`: xoá cookie. Muốn đăng xuất mọi nơi cùng lúc thì đổi secret `ADMIN_SESSION_SECRET`.
+- **Kiểm tra phiên:** mọi `/api/*` khác của admin Worker đều kiểm tra cookie. Thiếu hoặc sai thì trả `401`. Vẫn giữ kiểm tra `Origin` cho các request không phải GET. Thiếu `ADMIN_EMAILS` hoặc `ADMIN_SESSION_SECRET` thì chặn hết (fail closed).
+- **Bỏ phần Access:** xoá `worker/admin/accessJwt.ts` và các biến `ACCESS_*`.
+- **Giao diện:**
+  - Khi nhận `401`, hiện màn hình đăng nhập: nút "Gửi mã tới email", ô nhập mã 6 số, nút "Đăng nhập".
+  - Nút đăng xuất gọi `/api/auth/logout`.
+- **Email chứa mã:**
+  - Tiêu đề: `[In 3D Trung] Mã đăng nhập quản trị: 123456`.
+  - Nội dung: mã, thời hạn 10 phút, và câu "Nếu không phải bạn, bỏ qua email này."
+- **Tài liệu:** bỏ bước bật Zero Trust. Thêm bước `wrangler secret put ADMIN_SESSION_SECRET -c wrangler.admin.jsonc`.
+
+**Không làm:** nhiều tài khoản admin có quyền khác nhau, xác thực 2 lớp ngoài email.
