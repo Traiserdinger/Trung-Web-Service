@@ -16,22 +16,22 @@
     // Chỉ /api/* chạy Worker trước; mọi đường khác trả thẳng tài nguyên tĩnh.
     "run_worker_first": ["/api/*"]
   },
-  // database_id là giá trị tạm: chủ site thay bằng id thật sau khi chạy `wrangler d1 create trung-3d`.
+  // database_id của D1 trung-3d (không phải bí mật).
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "trung-3d",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "2be89bf2-34a6-48d1-b285-42631d4e88a7",
       // Id của trung-3d-preview (giá trị tạm); cần để chạy `wrangler d1 migrations apply DB --remote --preview`.
-      "preview_database_id": "00000000-0000-0000-0000-000000000000",
+      "preview_database_id": "7677d3c3-4b5b-4a31-8f1b-c611cf5f36d2",
       "migrations_dir": "migrations"
     }
   ],
   // Secrets (đặt bằng `wrangler secret put`): SHARED_SECRET, TURNSTILE_SECRET, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID.
   "vars": {
-    "PUBLIC_SITE_URL": "",
-    "ADMIN_SITE_URL": "",
-    "APPS_SCRIPT_URL": ""
+    "PUBLIC_SITE_URL": "https://trung-pcb-3d.minhlaductrung.workers.dev",
+    "ADMIN_SITE_URL": "https://trung-3d-admin.minhlaductrung.workers.dev",
+    "APPS_SCRIPT_URL": "https://script.google.com/macros/s/AKfycbyvHRfr8muFpvZDPBpha7SIMfya90zrxprtobUleQaB8JPxewNo9rzOpszdGGFpO0lw2Q/exec"
   },
   "previews": {
     // Bản preview dùng DB riêng và APPS_SCRIPT_URL rỗng (không gửi Telegram, Gmail, Drive).
@@ -39,7 +39,7 @@
       {
         "binding": "DB",
         "database_name": "trung-3d-preview",
-        "database_id": "00000000-0000-0000-0000-000000000000",
+        "database_id": "7677d3c3-4b5b-4a31-8f1b-c611cf5f36d2",
         "migrations_dir": "migrations"
       }
     ],

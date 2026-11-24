@@ -14,12 +14,12 @@
     "binding": "ASSETS",
     "run_worker_first": ["/api/*"]
   },
-  // Cùng D1 với Worker công khai; database_id là giá trị tạm, thay bằng id thật.
+  // Cùng D1 với Worker công khai.
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "trung-3d",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "2be89bf2-34a6-48d1-b285-42631d4e88a7",
       "migrations_dir": "migrations"
     }
   ],
@@ -30,8 +30,8 @@
     // Application Audience (AUD) tag của ứng dụng Access
     "ACCESS_AUD": "",
     // Email được phép, phân tách bằng dấu phẩy
-    "ADMIN_EMAILS": "",
-    "APPS_SCRIPT_URL": "",
-    "PUBLIC_SITE_URL": ""
+    "ADMIN_EMAILS": "minhlaductrung@gmail.com",
+    "APPS_SCRIPT_URL": "https://script.google.com/macros/s/AKfycbyvHRfr8muFpvZDPBpha7SIMfya90zrxprtobUleQaB8JPxewNo9rzOpszdGGFpO0lw2Q/exec",
+    "PUBLIC_SITE_URL": "https://trung-pcb-3d.minhlaductrung.workers.dev"
   }
 }
