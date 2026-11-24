@@ -1,4 +1,6 @@
 @import "tailwindcss";
+/* Quét cả src/: bản build admin (vite root = admin/) không tự tìm thấy class trong src/admin. */
+@source ".";
 
 /* Bảng màu và chữ — xem docs/design/2026-11-20-site-design.md */
 @theme {
