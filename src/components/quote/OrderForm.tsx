@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { contactConfig } from '../../config/contactConfig'
+import type { ColorOption } from '../../config/colorConfig'
 import { fileLimits } from '../../config/pricingConfig'
 import { fileToBase64, OrderSubmitError, submitOrder as defaultSubmit } from '../../lib/submitOrder'
 import type { MeshStats } from '../../utils/meshAnalysis'
@@ -23,6 +24,8 @@ interface Props {
   orderCode: string
   /** Nội dung file đã đọc sẵn trong bộ nhớ: gửi đi mà không phải đọc lại từ đĩa */
   fileBuffer?: ArrayBuffer
+  /** Màu khách đã chọn */
+  color: ColorOption
   /** 25.4 nếu khách đã đổi inch → mm khi báo giá */
   scale?: number
   onClose(): void
@@ -89,6 +92,7 @@ export function OrderForm({
   file: fileProp,
   orderCode: codeProp,
   fileBuffer: bufferProp,
+  color,
   scale: scaleProp = 1,
   onClose,
   onBusyChange,
@@ -116,7 +120,7 @@ export function OrderForm({
   const [errors, setErrors] = useState<CustomerErrors>({})
   const [stage, setStage] = useState<Stage>('idle')
   const [sendError, setSendError] = useState<string | null>(null)
-  const [done, setDone] = useState(false)
+  const [done, setDone] = useState<{ trackUrl: string; fileUploaded: boolean } | null>(null)
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
   const sendingRef = useRef(false)
   const turnstileRef = useRef<TurnstileHandle>(null)
@@ -162,6 +166,7 @@ export function OrderForm({
         stats,
         settings,
         customer,
+        colorId: color.id,
         fileName: file.name,
         fileSize: file.size,
         fileBase64,
@@ -170,8 +175,8 @@ export function OrderForm({
         turnstileToken,
       })
       setStage('sending')
-      await submit(payload, { url: contactConfig.appsScriptUrl })
-      setDone(true)
+      const r = await submit(payload, { url: contactConfig.appsScriptUrl })
+      setDone({ trackUrl: r.trackUrl, fileUploaded: r.fileUploaded })
       onSent?.()
     } catch (e) {
       setSendError(e instanceof OrderSubmitError ? e.message : 'Không gửi được, kiểm tra mạng và thử lại')
@@ -184,6 +189,8 @@ export function OrderForm({
   }
 
   if (done) {
+    // Chỉ nhận đường dẫn tuyệt đối http(s) từ máy chủ, còn lại dùng đường dẫn dự phòng cùng origin
+    const trackHref = /^https?:\/\//.test(done.trackUrl) ? done.trackUrl : `/tra-cuu?ma=${orderCode}`
     return (
       <div
         ref={doneRef}
@@ -198,8 +205,19 @@ export function OrderForm({
             ? 'Gửi file qua Zalo kèm mã này để mình bắt đầu xem.'
             : 'Nhắn mã này để chốt đơn. Mình xem file và trả lời bạn qua Zalo.'}
         </p>
-        <div className="mt-5 flex flex-wrap gap-3">
+        {!tooBig && !done.fileUploaded && (
+          <p className="mt-2 max-w-[40ch] text-[15px] font-semibold text-white">
+            Đơn đã được ghi nhận nhưng file chưa gửi được. Gửi file qua Zalo kèm mã này nhé.
+          </p>
+        )}
+        <div className="mt-5 flex flex-wrap items-center gap-3">
           <ZaloButton light>{tooBig ? 'Gửi file qua Zalo' : 'Nhắn Zalo cho Trung'}</ZaloButton>
+          <a
+            href={trackHref}
+            className="rounded-full border border-white/40 px-5 py-2.5 text-[14px] font-semibold text-white transition-colors hover:border-white"
+          >
+            Theo dõi tiến độ đơn
+          </a>
           {onNewOrder && (
             <button
               type="button"
@@ -224,6 +242,7 @@ export function OrderForm({
           <p className="mt-1 text-[13px] text-slate">
             Mã đơn <span className="font-semibold text-ink tnum">{orderCode}</span>, file {file.name}
           </p>
+          <p className="mt-1 text-[13px] text-slate">{`Màu: ${color.name}`}</p>
         </div>
         <button
           type="button"
@@ -277,7 +296,7 @@ export function OrderForm({
             />
           </Field>
         </div>
-        <Field id="of-email" label="Email" hint="không bắt buộc" error={errors.email}>
+        <Field id="of-email" label="Email" hint="không bắt buộc · để nhận email báo tiến độ" error={errors.email}>
           <input
             id="of-email"
             type="email"

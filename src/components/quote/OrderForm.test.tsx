@@ -6,6 +6,7 @@ import type { MeshStats } from '../../utils/meshAnalysis'
 import type { OrderPayload } from '../../utils/orderPayload'
 import type { QuoteState } from '../../utils/quoteState'
 import type { PrintSettings } from '../../utils/slicerEstimator'
+import { DEFAULT_COLORS } from '../../config/colorConfig'
 import { OrderForm } from './OrderForm'
 
 const stats: MeshStats = {
@@ -40,6 +41,7 @@ function setup(submit: unknown, f: File = file(), extra: Partial<Props> = {}) {
       settings={settings}
       file={f}
       orderCode={CODE}
+      color={DEFAULT_COLORS[2]}
       onClose={vi.fn()}
       submit={submit as Submit}
       {...extra}
@@ -65,7 +67,7 @@ describe('OrderForm', () => {
   })
 
   it('sends only once when the button is clicked twice', async () => {
-    const submit = vi.fn(() => new Promise<{ orderCode: string }>(() => {}))
+    const submit = vi.fn(() => new Promise<{ orderCode: string; trackUrl: string; fileUploaded: boolean }>(() => {}))
     setup(submit)
     await fillValid()
     const button = screen.getByRole('button', { name: 'Gửi đơn' })
@@ -80,7 +82,7 @@ describe('OrderForm', () => {
     const submit = vi
       .fn()
       .mockRejectedValueOnce(new OrderSubmitError('Không gửi được, kiểm tra mạng và thử lại'))
-      .mockImplementationOnce(async (p: OrderPayload) => ({ orderCode: p.orderCode }))
+      .mockImplementationOnce(async (p: OrderPayload) => ({ orderCode: p.orderCode, trackUrl: '/tra-cuu?ma=' + p.orderCode, fileUploaded: true }))
     setup(submit)
     await fillValid()
     await userEvent.click(screen.getByRole('button', { name: 'Gửi đơn' }))
@@ -93,7 +95,7 @@ describe('OrderForm', () => {
   })
 
   it('records an order without the file when it is over 35 MB, for a Zalo hand-off', async () => {
-    const submit = vi.fn(async (p: OrderPayload) => ({ orderCode: p.orderCode }))
+    const submit = vi.fn(async (p: OrderPayload) => ({ orderCode: p.orderCode, trackUrl: '/tra-cuu?ma=' + p.orderCode, fileUploaded: true }))
     const big = file()
     Object.defineProperty(big, 'size', { value: 36 * 1024 * 1024 })
     setup(submit, big)
@@ -106,7 +108,7 @@ describe('OrderForm', () => {
   })
 
   it('announces success in a focused status panel showing the sent code', async () => {
-    setup(vi.fn(async (p: OrderPayload) => ({ orderCode: p.orderCode })))
+    setup(vi.fn(async (p: OrderPayload) => ({ orderCode: p.orderCode, trackUrl: '/tra-cuu?ma=' + p.orderCode, fileUploaded: true })))
     await fillValid()
     await userEvent.click(screen.getByRole('button', { name: 'Gửi đơn' }))
     const status = await screen.findByRole('status')
@@ -140,7 +142,7 @@ describe('OrderForm', () => {
 
   it('locks the close button and reports busy while sending', async () => {
     const onBusyChange = vi.fn()
-    const submit = vi.fn(() => new Promise<{ orderCode: string }>(() => {}))
+    const submit = vi.fn(() => new Promise<{ orderCode: string; trackUrl: string; fileUploaded: boolean }>(() => {}))
     setup(submit, file(), { onBusyChange })
     await fillValid()
     await userEvent.click(screen.getByRole('button', { name: 'Gửi đơn' }))
@@ -166,7 +168,7 @@ describe('OrderForm', () => {
       const submit = vi
         .fn()
         .mockRejectedValueOnce(new OrderSubmitError('Quá nhiều đơn'))
-        .mockImplementationOnce(async (p: OrderPayload) => ({ orderCode: p.orderCode }))
+        .mockImplementationOnce(async (p: OrderPayload) => ({ orderCode: p.orderCode, trackUrl: '/tra-cuu?ma=' + p.orderCode, fileUploaded: true }))
       setup(submit, file(), { turnstileSiteKey: 'site-key' })
       await fillValid()
       await userEvent.click(screen.getByRole('button', { name: 'Gửi đơn' }))
@@ -179,5 +181,43 @@ describe('OrderForm', () => {
     } finally {
       delete window.turnstile
     }
+  })
+
+  it('hiện màu đã chọn trong phần tóm tắt và gợi ý email mới', () => {
+    setup(vi.fn())
+    expect(screen.getByText('Màu: Đỏ')).toBeInTheDocument()
+    expect(screen.getByText('không bắt buộc · để nhận email báo tiến độ')).toBeInTheDocument()
+  })
+
+  it('payload có colorId của màu đang chọn', async () => {
+    const submit = vi.fn(async (p: OrderPayload) => ({ orderCode: p.orderCode, trackUrl: '', fileUploaded: true }))
+    setup(submit)
+    await fillValid()
+    await userEvent.click(screen.getByRole('button', { name: 'Gửi đơn' }))
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1))
+    expect(submit.mock.calls[0][0]).toMatchObject({ colorId: 3 })
+  })
+
+  it('màn hình xong có link theo dõi tiến độ', async () => {
+    setup(vi.fn(async (p: OrderPayload) => ({ orderCode: p.orderCode, trackUrl: `https://site.example/tra-cuu?ma=${p.orderCode}`, fileUploaded: true })))
+    await fillValid()
+    await userEvent.click(screen.getByRole('button', { name: 'Gửi đơn' }))
+    const link = await screen.findByRole('link', { name: 'Theo dõi tiến độ đơn' })
+    expect(link.getAttribute('href')).toContain(`/tra-cuu?ma=${CODE}`)
+  })
+
+  it('trackUrl tương đối hoặc thiếu → link dự phòng', async () => {
+    setup(vi.fn(async (p: OrderPayload) => ({ orderCode: p.orderCode, trackUrl: '', fileUploaded: true })))
+    await fillValid()
+    await userEvent.click(screen.getByRole('button', { name: 'Gửi đơn' }))
+    const link = await screen.findByRole('link', { name: 'Theo dõi tiến độ đơn' })
+    expect(link.getAttribute('href')).toBe(`/tra-cuu?ma=${CODE}`)
+  })
+
+  it('fileUploaded false → hiện câu gửi file qua Zalo', async () => {
+    setup(vi.fn(async (p: OrderPayload) => ({ orderCode: p.orderCode, trackUrl: '', fileUploaded: false })))
+    await fillValid()
+    await userEvent.click(screen.getByRole('button', { name: 'Gửi đơn' }))
+    expect(await screen.findByText('Đơn đã được ghi nhận nhưng file chưa gửi được. Gửi file qua Zalo kèm mã này nhé.')).toBeInTheDocument()
   })
 })

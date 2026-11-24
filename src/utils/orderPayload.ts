@@ -79,6 +79,7 @@ export function buildOrderPayload(a: {
   stats: MeshStats
   settings: PrintSettings
   customer: CustomerInfo
+  colorId: number
   fileName: string
   fileSize: number
   fileBase64: string
@@ -86,7 +87,7 @@ export function buildOrderPayload(a: {
   scale?: number
   turnstileToken: string | null
   now?: Date
-}): OrderPayload {
+}): OrderPayload & { colorId: number } {
   const { quote } = a
   const estimate =
     quote.orderType === 'quote' && quote.estimate && quote.price
@@ -108,6 +109,7 @@ export function buildOrderPayload(a: {
       email: a.customer.email.trim(),
       note: a.customer.note.trim(),
     },
+    colorId: a.colorId,
     settings: a.settings,
     dims: a.stats.dims,
     surfaceArea: a.stats.surfaceArea,

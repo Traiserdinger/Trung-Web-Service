@@ -58,13 +58,17 @@ export function Quote3DCalculator({ loadColors = fetchColors }: { loadColors?: (
   const [picking, setPicking] = useState(false)
   const [colors, setColors] = useState<ColorOption[]>(DEFAULT_COLORS)
   const [colorId, setColorId] = useState(DEFAULT_COLORS[0].id)
+  const loadColorsRef = useRef(loadColors)
   useEffect(() => {
     let alive = true
-    void loadColors().then((list) => {
-      if (!alive || list.length === 0) return
-      setColors(list)
-      setColorId((id) => (list.some((c) => c.id === id) ? id : list[0].id))
-    })
+    loadColorsRef
+      .current()
+      .then((list) => {
+        if (!alive || list.length === 0) return
+        setColors(list)
+        setColorId((id) => (list.some((c) => c.id === id) ? id : list[0].id))
+      })
+      .catch(() => {}) // giữ màu mặc định
     return () => {
       alive = false
     }
@@ -341,6 +345,7 @@ export function Quote3DCalculator({ loadColors = fetchColors }: { loadColors?: (
             fileBuffer={loaded.buffer}
             scale={loaded.scale}
             orderCode={loaded.orderCode}
+            color={selectedColor}
             onClose={() => setShowOrder(false)}
             onBusyChange={onBusyChange}
             onSent={() => setSent(true)}

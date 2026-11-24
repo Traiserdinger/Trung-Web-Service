@@ -1,10 +1,10 @@
 import type { OrderPayload } from '../utils/orderPayload'
+import { createOrder } from './api'
 
 export class OrderSubmitError extends Error {}
 
 export type Transport = (url: string, body: string) => Promise<string>
 
-const NETWORK = 'Không gửi được, kiểm tra mạng và thử lại'
 
 /**
  * POST text/plain tới Apps Script bằng fetch.
@@ -36,26 +36,34 @@ export function fileToBase64(f: Blob): Promise<string> {
   })
 }
 
+/**
+ * Hai bước: (1) Worker ghi đơn và cấp vé, (2) tải file lên Apps Script bằng vé.
+ * Lỗi ở bước 2 không làm hỏng đơn: trả fileUploaded=false để khách gửi file qua Zalo.
+ */
 export async function submitOrder(
-  p: OrderPayload,
-  opts: { url: string; transport?: Transport },
-): Promise<{ orderCode: string }> {
-  if (!opts.url) throw new OrderSubmitError('Chưa cấu hình nơi nhận đơn')
+  p: OrderPayload & { colorId: number },
+  opts: { url: string; transport?: Transport; fetchFn?: typeof fetch },
+): Promise<{ orderCode: string; trackUrl: string; fileUploaded: boolean }> {
+  const { fileBase64, ...meta } = p
+  const created = await createOrder(meta, opts.fetchFn)
+  const base = { orderCode: created.orderCode, trackUrl: created.trackUrl }
+  if (!created.uploadTicket || !opts.url) return { ...base, fileUploaded: false }
+
   const transport = opts.transport ?? fetchTransport
-
-  let text: string
   try {
-    text = await transport(opts.url, JSON.stringify(p))
+    const text = await transport(
+      opts.url,
+      JSON.stringify({
+        orderCode: created.orderCode,
+        uploadTicket: created.uploadTicket,
+        fileName: p.fileName,
+        fileSize: p.fileSize,
+        fileBase64,
+      }),
+    )
+    const res = JSON.parse(text) as { ok?: boolean }
+    return { ...base, fileUploaded: res.ok === true }
   } catch {
-    throw new OrderSubmitError(NETWORK)
+    return { ...base, fileUploaded: false }
   }
-
-  let res: { ok?: boolean; orderCode?: string; error?: string }
-  try {
-    res = JSON.parse(text)
-  } catch {
-    throw new OrderSubmitError(NETWORK)
-  }
-  if (!res.ok) throw new OrderSubmitError(res.error || NETWORK)
-  return { orderCode: res.orderCode ?? p.orderCode }
 }

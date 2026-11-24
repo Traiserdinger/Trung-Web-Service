@@ -59,6 +59,7 @@ describe('buildOrderPayload', () => {
       stats,
       settings,
       customer: { name: 'An', phone: '0913014605', email: '', note: '', consent: true, honeypot: '' },
+      colorId: 3,
       fileName: 'box.stl',
       fileSize: 10,
       fileBase64: 'AAA=',
@@ -67,6 +68,7 @@ describe('buildOrderPayload', () => {
     })
     expect(p.orderType).toBe('consult')
     expect(p.estimate).toBeNull()
+    expect(p.colorId).toBe(3)
     expect(p.consultReasons).toEqual(['Vượt khổ: 210 × 90 × 40 mm'])
     expect(p.customer).toEqual({ name: 'An', phone: '0913014605', email: '', note: '' })
     expect(p.dims).toEqual(stats.dims)
