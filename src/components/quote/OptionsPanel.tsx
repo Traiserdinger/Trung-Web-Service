@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { materials, uiOptions, type MaterialId } from '../../config/pricingConfig'
+import type { ColorOption } from '../../config/colorConfig'
 import type { PrintSettings } from '../../utils/slicerEstimator'
 
 interface Props {
@@ -9,6 +10,9 @@ interface Props {
   supportReason: string | null
   /** Khoá khi đang gửi đơn, để màn hình luôn khớp với đơn đã gửi */
   disabled?: boolean
+  colors: ColorOption[]
+  colorId: number
+  onColorChange(id: number): void
 }
 
 function Group({ label, children, id }: { label: string; children: ReactNode; id: string }) {
@@ -52,7 +56,7 @@ function Segmented<T extends string | number>(p: {
   )
 }
 
-export function OptionsPanel({ value, onChange, supportReason, disabled }: Props) {
+export function OptionsPanel({ value, onChange, supportReason, disabled, colors, colorId, onColorChange }: Props) {
   const set = (patch: Partial<PrintSettings>) => onChange({ ...value, ...patch })
   const { min, max } = uiOptions.quantity
 
@@ -86,6 +90,28 @@ export function OptionsPanel({ value, onChange, supportReason, disabled }: Props
                   </span>
                 </span>
               </button>
+            )
+          })}
+        </div>
+      </Group>
+
+      <Group label="Màu" id="opt-color">
+        <div className="flex flex-wrap gap-2.5">
+          {colors.map((c) => {
+            const active = c.id === colorId
+            return (
+              <button
+                key={c.id}
+                type="button"
+                aria-pressed={active}
+                aria-label={c.name}
+                title={c.name}
+                onClick={() => onColorChange(c.id)}
+                className={`h-9 w-9 shrink-0 rounded-full ring-1 ring-mist transition-shadow ${
+                  active ? 'ring-2 ring-ink ring-offset-2 ring-offset-paper' : 'hover:ring-slate'
+                }`}
+                style={{ background: c.hex }}
+              />
             )
           })}
         </div>

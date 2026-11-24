@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { materials, printerConfig, uiOptions } from '../../config/pricingConfig'
+import { printerConfig, uiOptions } from '../../config/pricingConfig'
+import { DEFAULT_COLORS, type ColorOption } from '../../config/colorConfig'
+import { fetchColors } from '../../lib/colors'
 import { orientInWorker, parseStlInWorker, type WorkerResult } from '../../lib/stlWorkerClient'
 import { useTheme } from '../../lib/theme'
 import { formatDims } from '../../utils/format'
@@ -38,7 +40,7 @@ function Notice({ tone, children }: { tone: 'alert' | 'caution'; children: React
   return <div className={`rounded-[14px] px-4 py-3 text-[14px] leading-[1.5] ${cls}`}>{children}</div>
 }
 
-export function Quote3DCalculator() {
+export function Quote3DCalculator({ loadColors = fetchColors }: { loadColors?: () => Promise<ColorOption[]> }) {
   const viewerRef = useRef<StlViewerHandle>(null)
   const dropRef = useRef<DropZoneHandle>(null)
   const requestRef = useRef(0)
@@ -54,6 +56,21 @@ export function Quote3DCalculator() {
   const [formKey, setFormKey] = useState(0)
   const [settings, setSettings] = useState<PrintSettings>({ ...uiOptions.defaults, support: false })
   const [picking, setPicking] = useState(false)
+  const [colors, setColors] = useState<ColorOption[]>(DEFAULT_COLORS)
+  const [colorId, setColorId] = useState(DEFAULT_COLORS[0].id)
+  useEffect(() => {
+    let alive = true
+    void loadColors().then((list) => {
+      if (!alive || list.length === 0) return
+      setColors(list)
+      setColorId((id) => (list.some((c) => c.id === id) ? id : list[0].id))
+    })
+    return () => {
+      alive = false
+    }
+    // chỉ tải một lần khi mở trang
+  }, [])
+  const selectedColor = colors.find((c) => c.id === colorId) ?? colors[0]
   const [theme] = useTheme()
   const sendingRef = useRef(false)
   const loadedRef = useRef<Loaded | null>(null)
@@ -171,7 +188,7 @@ export function Quote3DCalculator() {
             <StlViewer
               ref={viewerRef}
               positions={loaded?.positions ?? null}
-              color={materials[settings.material].color}
+              color={selectedColor.hex}
               overflow={overflow}
               bed={bed}
               dark={theme === 'dark'}
@@ -307,7 +324,12 @@ export function Quote3DCalculator() {
 
       {/* Tuỳ chọn + phiếu tạm tính */}
       <div className="col-span-12 space-y-7 lg:col-span-5">
-        <OptionsPanel value={settings} onChange={onSettingsChange} supportReason={supportReason} disabled={sending} />
+        <OptionsPanel value={settings} onChange={onSettingsChange} supportReason={supportReason}
+          disabled={sending}
+          colors={colors}
+          colorId={selectedColor.id}
+          onColorChange={setColorId}
+        />
         <QuoteResult quote={quote} stats={stats} onSubmit={() => (sent ? startNewOrder(true) : setShowOrder(true))} />
         {showOrder && loaded && quote && (
           <OrderForm

@@ -58,6 +58,19 @@ beforeEach(() => {
 })
 
 describe('Quote3DCalculator', () => {
+  it('selects the first color by default and switches to the loaded list', async () => {
+    const loadColors = vi.fn().mockResolvedValue([
+      { id: 7, name: 'Xanh', hex: '#0000ff' },
+      { id: 8, name: 'Vàng', hex: '#ffff00' },
+    ])
+    render(<Quote3DCalculator loadColors={loadColors} />)
+    expect(screen.getByRole('button', { name: 'Đen' })).toHaveAttribute('aria-pressed', 'true')
+    expect(await screen.findByRole('button', { name: 'Xanh' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByRole('button', { name: 'Đen' })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Vàng' }))
+    expect(screen.getByRole('button', { name: 'Vàng' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
   it('a new file that fails to parse replaces the old one and the error names it', async () => {
     h.parse.mockResolvedValueOnce(parsed(30)).mockRejectedValueOnce(new Error('File STL không hợp lệ hoặc rỗng'))
     const { container } = render(<Quote3DCalculator />)

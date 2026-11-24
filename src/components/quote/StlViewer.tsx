@@ -28,7 +28,7 @@ const BED_THEME = {
   dark: { plate: 0x26322d, grid1: 0x4a5a53, grid2: 0x34423c, volume: 0x46554f, ground: 0x1c2522 },
 }
 
-const OVERFLOW_COLOR = '#d92d20'
+const OVERFLOW_COLOR = '#f59e0b'
 
 interface Ctx {
   renderer: THREE.WebGLRenderer
