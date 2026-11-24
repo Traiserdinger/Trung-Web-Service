@@ -144,6 +144,13 @@ describe('Apps Script upload', () => {
     expect(f.folders.size).toBe(0)
   })
 
+  it('valid ticket but payload size differs from ticket fileSize → rejected, no folder', async () => {
+    const res = post(await upload({ fileBase64: Buffer.alloc(10).toString('base64') }))
+    expect(res).toEqual({ ok: false, error: 'File không khớp với đơn, vui lòng gửi lại đơn' })
+    expect(f.folders.size).toBe(0)
+    expect(f.fetches).toHaveLength(0)
+  })
+
   it('Drive failure → ok:false with Zalo message', async () => {
     f.driveFails = true
     expect(post(await upload())).toEqual({

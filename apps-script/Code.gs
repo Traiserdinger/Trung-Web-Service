@@ -123,10 +123,19 @@ function handleUpload_(props, p) {
   if (p.fileBase64.length > Math.ceil((MAX_FILE_BYTES * 4) / 3) + 4) return { ok: false, error: 'File lớn hơn 35MB, vui lòng gửi qua Zalo' };
   var fileName = String(p.fileName || 'model.stl').slice(0, 160).replace(/[\\/:*?"<>|\r\n]/g, '_');
 
+  // Vé gắn với fileSize: số byte thật phải khớp, không thì vé cho file nhỏ có thể chở file lớn.
+  var bytes;
+  try {
+    bytes = Utilities.base64Decode(p.fileBase64);
+  } catch (err) {
+    bytes = null;
+  }
+  if (!bytes || bytes.length !== Number(p.fileSize)) return { ok: false, error: 'File không khớp với đơn, vui lòng gửi lại đơn' };
+
   var folderUrl;
   var lock = acquireLock_();
   try {
-    folderUrl = saveToDrive_(props.getProperty('DRIVE_FOLDER_ID'), code, fileName, p.fileBase64);
+    folderUrl = saveToDrive_(props.getProperty('DRIVE_FOLDER_ID'), code, fileName, bytes);
   } catch (err) {
     console.error('Drive error', err);
     return { ok: false, error: 'Không lưu được file, vui lòng gửi qua Zalo kèm mã đơn' };
@@ -164,12 +173,12 @@ function acquireLock_() {
 }
 
 /** Lấy hoặc tạo thư mục theo mã đơn; gửi lại cùng file thì không tạo thêm. Gọi trong khoá. */
-function saveToDrive_(folderId, code, safeName, base64) {
+function saveToDrive_(folderId, code, safeName, bytes) {
   var root = DriveApp.getFolderById(folderId);
   var existing = root.getFoldersByName(code);
   var folder = existing.hasNext() ? existing.next() : root.createFolder(code);
   if (!folder.getFilesByName(safeName).hasNext()) {
-    folder.createFile(Utilities.newBlob(Utilities.base64Decode(base64), 'model/stl', safeName));
+    folder.createFile(Utilities.newBlob(bytes, 'model/stl', safeName));
   }
   return folder.getUrl();
 }
