@@ -41,7 +41,9 @@ Mở `src/config/contactConfig.ts` và dán URL vào trường:
 appsScriptUrl: 'https://script.google.com/macros/s/…/exec',
 ```
 
-Sau đó commit và push. Cloudflare Pages sẽ tự deploy lại.
+Từ nay URL này **chỉ dùng để trình duyệt tải file STL lên** (cần vé do Worker cấp). Đơn hàng gửi cho Worker và lưu trong D1. Cũng dán cùng URL vào biến `APPS_SCRIPT_URL` của Worker, xem [`setup-cloudflare.md`](setup-cloudflare.md).
+
+Sau đó commit và push. Cloudflare sẽ tự build và deploy lại.
 
 ## 5. Đặt thư mục Drive ở chế độ riêng tư
 

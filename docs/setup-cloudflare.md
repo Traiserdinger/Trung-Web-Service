@@ -50,7 +50,15 @@ Mỗi lệnh in ra một `database_id` (dạng `xxxxxxxx-xxxx-…`). Dán vào c
 npx wrangler d1 migrations apply DB --remote
 ```
 
-Hỏi xác nhận thì gõ `y`. Lệnh tạo bảng đơn hàng và 4 màu mặc định (Đen, Trắng, Đỏ, Nâu). Các lần deploy sau, `npm run deploy` tự chạy lại bước này nên không cần làm tay nữa.
+Hỏi xác nhận thì gõ `y`. Lệnh tạo bảng đơn hàng và 4 màu mặc định (Đen, Trắng, Đỏ, Nâu). Các lần deploy sau, `npm run deploy` tự chạy lại bước này cho database thật nên không cần làm tay nữa.
+
+**Database preview cũng cần tạo bảng**, vì `npm run deploy` chỉ migrate database thật:
+
+```powershell
+npx wrangler d1 migrations apply DB --remote --preview
+```
+
+Nếu lệnh trên báo không tìm thấy database preview, dùng tên trực tiếp: `npx wrangler d1 migrations apply trung-3d-preview --remote`. **Mỗi khi thêm một file mới trong thư mục `migrations/`, chạy lại lệnh này** cho database preview (database thật thì `npm run deploy` lo).
 
 ## 4. Đặt secret
 
@@ -66,7 +74,7 @@ openssl rand -hex 32
 
 | Secret | Giá trị lấy ở đâu |
 |---|---|
-| `SHARED_SECRET` | chuỗi vừa sinh ở trên. **Lưu lại**, còn dùng ở bước 4 phía dưới và bước 9 |
+| `SHARED_SECRET` | chuỗi vừa sinh ở trên. **Lưu lại**, còn dùng cho Worker admin ngay bên dưới và ở bước 9 |
 | `TELEGRAM_BOT_TOKEN` | token của bot Telegram (từ @BotFather) |
 | `TELEGRAM_CHAT_ID` | id cuộc trò chuyện nhận tin báo đơn |
 | `TURNSTILE_SECRET` | secret key Cloudflare Turnstile. **Tuỳ chọn**, bỏ qua nếu không dùng |
@@ -84,7 +92,7 @@ npx wrangler secret put TELEGRAM_CHAT_ID
 npx wrangler secret put TURNSTILE_SECRET
 ```
 
-**Worker admin** (thêm `-c wrangler.admin.jsonc`), chỉ cần `SHARED_SECRET`, **cùng giá trị** với Worker công khai:
+**Worker admin** (thêm `-c wrangler.admin.jsonc`). **Lệnh này chỉ chạy được sau khi Worker admin đã deploy lần đầu (bước 6)**, nên nếu chưa có thì làm sau bước 6 rồi quay lại đây. Chỉ cần `SHARED_SECRET`, **cùng giá trị** với Worker công khai:
 
 ```powershell
 npx wrangler secret put SHARED_SECRET -c wrangler.admin.jsonc
