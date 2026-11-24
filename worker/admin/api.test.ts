@@ -26,7 +26,7 @@ const adminEnv = () =>
 const handler = createAdminHandler()
 // Cookie phiên thật cho email đầu tiên (chữ thường) của ADMIN_EMAILS.
 const sessionCookie = async (secret = 'sess', email = 'trung@x.com') =>
-  /admin_session=[^;]*/.exec(await makeSessionCookie(secret, email))![0]
+  /__Host-admin_session=[^;]*/.exec(await makeSessionCookie(secret, email))![0]
 
 type Env = ReturnType<typeof adminEnv>
 async function call(env: Env, method: string, path: string, body?: unknown, headers: Record<string, string> = {}) {
@@ -59,10 +59,10 @@ describe('xác thực', () => {
   })
   it('cookie rác / sai secret / email khác → 401', async () => {
     const env = adminEnv()
-    expect((await call(env, 'GET', '/api/orders', undefined, { Cookie: 'admin_session=abc' })).res.status).toBe(401)
+    expect((await call(env, 'GET', '/api/orders', undefined, { Cookie: '__Host-admin_session=abc' })).res.status).toBe(401)
     expect((await call(env, 'GET', '/api/orders', undefined, { Cookie: await sessionCookie('other') })).res.status).toBe(401)
     expect((await call(env, 'GET', '/api/orders', undefined, { Cookie: await sessionCookie('sess', 'other@x.com') })).res.status).toBe(401)
-    expect((await call(env, 'GET', '/api/auth/me', undefined, { Cookie: 'admin_session=abc' })).res.status).toBe(401)
+    expect((await call(env, 'GET', '/api/auth/me', undefined, { Cookie: '__Host-admin_session=abc' })).res.status).toBe(401)
   })
   it('thiếu ADMIN_SESSION_SECRET hoặc ADMIN_EMAILS → 401 với mọi /api', async () => {
     for (const k of ['ADMIN_SESSION_SECRET', 'ADMIN_EMAILS'] as const) {

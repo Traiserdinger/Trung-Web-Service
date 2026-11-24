@@ -25,7 +25,7 @@
   ],
   // Secret (wrangler secret put -c wrangler.admin.jsonc): SHARED_SECRET (cùng giá trị Worker công khai), ADMIN_SESSION_SECRET.
   "vars": {
-    // Email được phép, phân tách bằng dấu phẩy
+    // Có thể liệt kê nhiều email, nhưng chỉ email ĐẦU TIÊN nhận mã và được dùng; các email khác bị bỏ qua.
     "ADMIN_EMAILS": "minhlaductrung@gmail.com",
     "APPS_SCRIPT_URL": "https://script.google.com/macros/s/AKfycbyvHRfr8muFpvZDPBpha7SIMfya90zrxprtobUleQaB8JPxewNo9rzOpszdGGFpO0lw2Q/exec",
     "PUBLIC_SITE_URL": "https://trung-pcb-3d.minhlaductrung.workers.dev"

@@ -29,3 +29,18 @@ export async function unhit(db: D1Database, key: string): Promise<void> {
     .bind(key)
     .run()
 }
+
+// Chỉ đọc: true nếu key đã đủ `limit` lượt trong cửa sổ (không ghi thêm lượt).
+export async function isFull(
+  db: D1Database,
+  key: string,
+  limit: number,
+  windowSec: number,
+  now = Date.now(),
+): Promise<boolean> {
+  const row = await db
+    .prepare('SELECT COUNT(*) AS n FROM rate_hits WHERE key = ? AND at > ?')
+    .bind(key, now - windowSec * 1000)
+    .first<{ n: number }>()
+  return (row?.n ?? 0) >= limit
+}

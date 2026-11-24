@@ -2,12 +2,12 @@ import type { Env } from '../shared/env.ts'
 import { callAppsScript } from '../shared/appsScript.ts'
 import { hmacHex, safeEqual } from '../shared/hmac.ts'
 import { json, readJson } from '../shared/http.ts'
-import { hit } from '../shared/rateLimit.ts'
+import { hit, isFull } from '../shared/rateLimit.ts'
 
 const CODE_TTL_SEC = 600
 const MAX_ATTEMPTS = 5
 const SESSION_TTL_SEC = 604_800
-const COOKIE = 'admin_session'
+const COOKIE = '__Host-admin_session'
 const COOKIE_ATTRS = 'HttpOnly; Secure; SameSite=Strict; Path=/'
 
 // Secret đã cắt khoảng trắng; dùng ở mọi nơi để cổng và cookie luôn khớp.
@@ -69,12 +69,14 @@ const BAD_CODE = { ok: false, error: 'Mã không đúng hoặc đã hết hạn'
 
 async function requestCode(req: Request, env: Env, now: number): Promise<Response> {
   const ip = req.headers.get('CF-Connecting-IP') || 'unknown'
-  if (
-    !(await hit(env.DB, 'admin-code-ip:' + ip, 3, CODE_TTL_SEC, now)) ||
-    !(await hit(env.DB, 'admin-code-day', 20, 86_400, now))
-  ) {
+  const tooManyToday = () =>
+    json({ ok: false, error: 'Đã gửi quá nhiều mã hôm nay, vui lòng thử lại sau' }, 429)
+  // Trần ngày đã đầy thì không tốn lượt IP.
+  if (await isFull(env.DB, 'admin-code-day', 20, 86_400, now)) return tooManyToday()
+  if (!(await hit(env.DB, 'admin-code-ip:' + ip, 3, CODE_TTL_SEC, now))) {
     return json({ ok: false, error: 'Bạn đã yêu cầu quá nhiều mã, thử lại sau 10 phút' }, 429)
   }
+  if (!(await hit(env.DB, 'admin-code-day', 20, 86_400, now))) return tooManyToday()
   const code = newCode()
   // Mã mới huỷ mọi mã cũ.
   await env.DB.batch([
@@ -116,6 +118,10 @@ async function verifyCode(req: Request, env: Env, now: number): Promise<Response
     .first<{ id: number; code_hash: string; attempts: number }>()
   if (!row) return json(BAD_CODE, 401)
 
+  // Trần toàn hệ thống cho lần nhập sai: đầy thì không so sánh nữa.
+  if (await isFull(env.DB, 'admin-verify-fail-day', 30, 86_400, now)) {
+    return json({ ok: false, error: 'Đã nhập sai quá nhiều lần hôm nay, vui lòng thử lại sau' }, 429)
+  }
   const secret = sessionSecret(env)
   if (safeEqual(await codeHash(secret, code), row.code_hash)) {
     // Xoá nguyên tử: chỉ một request thắng khi hai request cùng dùng một mã.
@@ -125,6 +131,7 @@ async function verifyCode(req: Request, env: Env, now: number): Promise<Response
     res.headers.append('Set-Cookie', await makeSessionCookie(secret, firstAdmin(env), now))
     return res
   }
+  await hit(env.DB, 'admin-verify-fail-day', 30, 86_400, now)
   if (row.attempts >= MAX_ATTEMPTS) await env.DB.prepare('DELETE FROM admin_codes WHERE id = ?').bind(row.id).run()
   return json(BAD_CODE, 401)
 }

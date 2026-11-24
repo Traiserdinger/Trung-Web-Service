@@ -7,7 +7,7 @@ Từ bản này, đơn hàng được lưu trong cơ sở dữ liệu **Cloudfla
 | Công khai | `trung-pcb-3d` | Trang báo giá, nhận đơn, tra cứu đơn của khách | `wrangler.jsonc` |
 | Admin | `trung-3d-admin` | Trang quản lý đơn, đổi trạng thái, sửa màu (chỉ Trung vào được) | `wrangler.admin.jsonc` |
 
-Làm theo các bước dưới đây **một lần**, mất khoảng 45 phút. **Thứ tự rất quan trọng**: tạo D1 và dán id, đặt secret, deploy Worker công khai, deploy Worker admin, điền vars, cập nhật Script Properties của Apps Script rồi deploy lại Apps Script, và **cuối cùng mới đăng nhập admin** (mã đăng nhập đi qua Apps Script mới). Cài Apps Script trước theo [`setup-apps-script.md`](setup-apps-script.md) (bước 1 đến 3) để có URL Web app.
+Làm theo các bước dưới đây **một lần**, mất khoảng 45 phút. **Thứ tự rất quan trọng**: tạo D1 và dán id, đặt secret, deploy Worker công khai, deploy Worker admin, điền vars, cập nhật Script Properties của Apps Script rồi deploy lại Apps Script, và **cuối cùng mới đăng nhập admin** (mã đăng nhập đi qua Apps Script mới). Cài Apps Script trước theo [`setup-apps-script.md`](setup-apps-script.md) (bước 1 đến 3) để có URL Web app. Apps Script phải là **phiên bản trong repo này** (`Code.gs` mới có action `notifyStatus`), được deploy kèm Script Properties; bắt buộc phải làm vậy vì script đang deploy hiện tại là bản cũ, không có `notifyStatus` nên sẽ không gửi được mã đăng nhập.
 
 > **Apps Script phải được cập nhật và deploy lại (bước 8) trước khi đăng nhập admin (bước 9)**, vì email chứa mã đăng nhập được gửi đi qua Apps Script (bước 8). Chưa làm bước 8 thì sẽ không nhận được mã.
 
@@ -206,7 +206,7 @@ Trang admin không có mật khẩu. Mỗi lần đăng nhập, hệ thống g�
 Cần biết:
 
 - Mã chỉ có hiệu lực **10 phút** và dùng được **một lần**. Nhập sai 5 lần thì mã bị huỷ, phải bấm gửi mã mới. Ngoài ra mỗi mạng (IP) chỉ được thử nhập mã tối đa 10 lần trong 10 phút.
-- Có giới hạn chống lạm dụng: mỗi địa chỉ IP chỉ xin mã tối đa 3 lần trong 10 phút, và toàn hệ thống tối đa 20 mã mỗi ngày. Bị chặn thì đợi rồi thử lại.
+- Có giới hạn chống lạm dụng: mỗi địa chỉ IP chỉ xin mã tối đa 3 lần trong 10 phút, và toàn hệ thống tối đa 20 mã mỗi ngày. Ngoài ra toàn hệ thống chỉ cho phép tối đa 30 lần nhập sai mỗi ngày. Bị chặn thì đợi rồi thử lại.
 - Đăng nhập xong, trình duyệt nhớ **7 ngày** rồi hỏi lại mã.
 - Không thấy thư: kiểm tra mục Spam, và chắc chắn Apps Script đã cập nhật và deploy lại (bước 8).
 
@@ -229,7 +229,8 @@ Vào trang admin → **Màu** để thêm, sửa, tắt màu (tên và mã màu)
 |---|---|
 | Admin không cho vào, mọi thao tác báo 401 | Chưa đặt `ADMIN_EMAILS` hoặc secret `ADMIN_SESSION_SECRET` (bước 4, 7) |
 | Bấm gửi mã mà không có email | Apps Script chưa cập nhật hoặc chưa deploy lại (bước 8), hoặc thư nằm trong Spam |
-| Báo "quá nhiều mã" | Đã xin mã quá giới hạn (3 lần/10 phút), đợi 10 phút rồi thử lại |
+| Báo "Bạn đã yêu cầu quá nhiều mã, thử lại sau 10 phút" | Đã xin mã quá 3 lần trong 10 phút từ cùng một mạng, đợi 10 phút rồi thử lại |
+| Báo "quá nhiều mã hôm nay" hoặc "nhập sai quá nhiều lần hôm nay" | Chạm trần cả ngày toàn hệ thống (20 mã, 30 lần nhập sai). Đợi đến hôm sau, hoặc xoá bộ đếm: `npx wrangler d1 execute DB --remote --command "DELETE FROM rate_hits WHERE key LIKE 'admin-%'"` |
 | Chưa áp dụng migration 0002 (lỗi khi gửi mã) | Chạy `npx wrangler d1 migrations apply DB --remote` và thêm `--preview` cho database preview (bước 3) |
 | Gửi đơn được nhưng không có email/Telegram/file | `APPS_SCRIPT_URL` còn trống (chế độ preview), hoặc thiếu secret ở bước 4 |
 | Email không gửi sau khi đổi trạng thái | `SHARED_SECRET` hai nơi khác nhau, hoặc chưa deploy lại Apps Script (bước 8) |

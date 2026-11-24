@@ -79,7 +79,17 @@ describe('request-code', () => {
     for (let i = 0; i < 20; i++) {
       expect((await auth(env, '/api/auth/request-code', {}, NOW, `9.9.9.${i}`)).res.status).toBe(200)
     }
-    expect((await auth(env, '/api/auth/request-code', {}, NOW, '9.9.9.99')).res.status).toBe(429)
+    const r = await auth(env, '/api/auth/request-code', {}, NOW, '9.9.9.99')
+    expect(r.res.status).toBe(429)
+    expect(r.body).toEqual({ ok: false, error: 'Đã gửi quá nhiều mã hôm nay, vui lòng thử lại sau' })
+  })
+  it('trần ngày đã đầy → không tốn lượt IP', async () => {
+    const env = authEnv()
+    for (let i = 0; i < 20; i++) await env.DB.prepare('INSERT INTO rate_hits (key, at) VALUES (?, ?)').bind('admin-code-day', NOW).run()
+    expect((await auth(env, '/api/auth/request-code', {}, NOW, '5.5.5.5')).res.status).toBe(429)
+    const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM rate_hits WHERE key = 'admin-code-ip:5.5.5.5'").first<{ n: number }>()
+    expect(n!.n).toBe(0)
+    expect(await count(env)).toBe(0)
   })
   it('Apps Script lỗi → vẫn 200 cùng message', async () => {
     fetchMock.mockRejectedValue(new Error('boom'))
@@ -105,7 +115,7 @@ describe('verify', () => {
     expect(res.status).toBe(200)
     expect(body).toEqual({ ok: true })
     const sc = res.headers.get('set-cookie')!
-    expect(sc).toMatch(/^admin_session=\d+\.[0-9a-f]{64}; /)
+    expect(sc).toMatch(/^__Host-admin_session=\d+\.[0-9a-f]{64}; /)
     for (const a of ['HttpOnly', 'Secure', 'SameSite=Strict', 'Path=/', 'Max-Age=604800']) expect(sc).toContain(a)
     const again = await auth(env, '/api/auth/verify', { code })
     expect(again.res.status).toBe(401)
@@ -150,6 +160,22 @@ describe('verify', () => {
       expect((await auth(env, '/api/auth/verify', b)).res.status).toBe(401)
     }
   })
+  it('đủ 30 lần sai trong ngày → 429, không so sánh (mã đúng cũng bị chặn)', async () => {
+    const env = authEnv()
+    const code = await requestCode(env)
+    for (let i = 0; i < 30; i++) await env.DB.prepare('INSERT INTO rate_hits (key, at) VALUES (?, ?)').bind('admin-verify-fail-day', NOW).run()
+    const r = await auth(env, '/api/auth/verify', { code })
+    expect(r.res.status).toBe(429)
+    expect(r.body).toEqual({ ok: false, error: 'Đã nhập sai quá nhiều lần hôm nay, vui lòng thử lại sau' })
+    expect(r.res.headers.get('set-cookie')).toBeNull()
+  })
+  it('mỗi lần nhập sai ghi một lượt vào admin-verify-fail-day', async () => {
+    const env = authEnv()
+    const code = await requestCode(env)
+    await auth(env, '/api/auth/verify', { code: code === '000000' ? '111111' : '000000' })
+    const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM rate_hits WHERE key = 'admin-verify-fail-day'").first<{ n: number }>()
+    expect(n!.n).toBe(1)
+  })
   it('lần thứ 11 cùng IP trong 600 s → 429', async () => {
     const env = authEnv()
     for (let i = 0; i < 10; i++) await auth(env, '/api/auth/verify', { code: '000000' })
@@ -165,12 +191,12 @@ describe('logout', () => {
     const { res, body } = await auth(authEnv(), '/api/auth/logout', {})
     expect(res.status).toBe(200)
     expect(body).toEqual({ ok: true })
-    expect(res.headers.get('set-cookie')).toBe('admin_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0')
+    expect(res.headers.get('set-cookie')).toBe('__Host-admin_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0')
   })
 })
 
 describe('verifySession', () => {
-  const val = (setCookie: string) => /admin_session=[^;]*/.exec(setCookie)![0]
+  const val = (setCookie: string) => /__Host-admin_session=[^;]*/.exec(setCookie)![0]
   it('cookie đúng → true; nhiều cookie, có khoảng trắng → true', async () => {
     const c = val(await makeSessionCookie('s', 'a@x.com', NOW))
     expect(await verifySession('s', 'a@x.com', c, NOW)).toBe(true)
@@ -185,7 +211,7 @@ describe('verifySession', () => {
     expect(await verifySession('s', 'b@y.com', c, NOW)).toBe(false)
     const far = val(await makeSessionCookie('s', 'a@x.com', NOW + 10_000_000))
     expect(await verifySession('s', 'a@x.com', far, NOW)).toBe(false)
-    for (const h of ['admin_session=abc', 'admin_session=', '', null, ';;;', 'admin_session=1.2.3', 'admin_session=x.y']) {
+    for (const h of ['__Host-admin_session=abc', '__Host-admin_session=', '', null, ';;;', '__Host-admin_session=1.2.3', '__Host-admin_session=x.y']) {
       expect(await verifySession('s', 'a@x.com', h, NOW)).toBe(false)
     }
   })
@@ -199,7 +225,7 @@ describe('cổng trong handler', () => {
     const code = /(\d{6})$/.exec(lastEnvelope().data.subject)![1]
     const v = await handler.fetch(req('/api/auth/verify', { code }), env, fakeCtx())
     expect(v.status).toBe(200)
-    const cookie = /admin_session=[^;]*/.exec(v.headers.get('set-cookie')!)![0]
+    const cookie = /__Host-admin_session=[^;]*/.exec(v.headers.get('set-cookie')!)![0]
     const me = await handler.fetch(new Request(ORIGIN + '/api/auth/me', { headers: { cookie } }), env, fakeCtx())
     expect(me.status).toBe(200)
   })
@@ -219,7 +245,7 @@ describe('cổng trong handler', () => {
     const code = /(\d{6})$/.exec(lastEnvelope().data.subject)![1]
     const v = await handler.fetch(req('/api/auth/verify', { code }), env, fakeCtx())
     expect(v.status).toBe(200)
-    const cookie = /admin_session=[^;]*/.exec(v.headers.get('set-cookie')!)![0]
+    const cookie = /__Host-admin_session=[^;]*/.exec(v.headers.get('set-cookie')!)![0]
     const me = await handler.fetch(
       new Request(ORIGIN + '/api/auth/me', { headers: { cookie: cookie } }),
       env,
