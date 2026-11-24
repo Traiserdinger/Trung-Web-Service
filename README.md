@@ -3,7 +3,7 @@
 Web tĩnh cho phép khách thả file `.stl`, xem mô hình 3D trên bàn in Bambu Lab A1 Mini, nhận **giá tạm tính** và **gửi đơn**. Đơn được lưu trong cơ sở dữ liệu Cloudflare D1 và Trung quản lý ở trang admin riêng (có đăng nhập). File STL lưu vào Google Drive của Trung, kèm thông báo Telegram và email.
 
 - Spec: [`docs/superpowers/specs/2026-11-20-quote3d-calculator-design.md`](docs/superpowers/specs/2026-11-20-quote3d-calculator-design.md)
-- Cài Cloudflare (D1, trang admin, Access, triển khai): [`docs/setup-cloudflare.md`](docs/setup-cloudflare.md)
+- Cài Cloudflare (D1, trang admin, đăng nhập bằng mã email, triển khai): [`docs/setup-cloudflare.md`](docs/setup-cloudflare.md)
 - Cài Apps Script nhận đơn: [`docs/setup-apps-script.md`](docs/setup-apps-script.md)
 - Hiệu chỉnh hệ số giá: [`docs/calibration.md`](docs/calibration.md)
 
@@ -31,7 +31,7 @@ Sửa xong thì commit và push lên GitHub. Cloudflare sẽ tự build lại.
 
 ## Đưa web lên Cloudflare
 
-Website chạy trên **Cloudflare Workers** (Worker công khai `trung-pcb-3d` và Worker admin `trung-3d-admin`), mỗi lần push lên nhánh `main` thì tự build và deploy. Cách tạo cơ sở dữ liệu, đặt secret, bật Cloudflare Access và các bước theo thứ tự nằm trong [`docs/setup-cloudflare.md`](docs/setup-cloudflare.md).
+Website chạy trên **Cloudflare Workers** (Worker công khai `trung-pcb-3d` và Worker admin `trung-3d-admin`), mỗi lần push lên nhánh `main` thì tự build và deploy. Cách tạo cơ sở dữ liệu, đặt secret, đặt đăng nhập admin bằng mã gửi qua email và các bước theo thứ tự nằm trong [`docs/setup-cloudflare.md`](docs/setup-cloudflare.md).
 
 > Khi `APPS_SCRIPT_URL` (Worker) còn trống, site chạy như bản preview: đơn vẫn lưu nhưng không upload file, không gửi email hay Telegram.
 
@@ -46,7 +46,7 @@ src/components/    giao diện (quote/ và layout/)
 src/pages/         trang tra cứu đơn của khách
 src/admin/         giao diện trang admin (build ra dist-admin/)
 worker/public/     Worker công khai: API đơn hàng, tra cứu (wrangler.jsonc)
-worker/admin/      Worker admin: API quản trị sau Cloudflare Access (wrangler.admin.jsonc)
+worker/admin/      Worker admin: API quản trị đăng nhập bằng mã gửi qua email (wrangler.admin.jsonc)
 migrations/        migration cơ sở dữ liệu D1
 apps-script/       Code.gs: lưu file STL vào Drive và gửi Gmail
 tests/fixtures/    sinh mesh mẫu cho test
