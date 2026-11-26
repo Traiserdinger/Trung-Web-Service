@@ -35,11 +35,25 @@ export interface ProcessedStl {
   rotated: boolean
 }
 
-/**
- * Parse STL (binary hoặc ASCII) → scale → đổi trục Z-up sang Y-up → (tuỳ chọn) tự xoay hướng in
- * tốt nhất → phân tích.
- */
-export function processStl(buffer: ArrayBuffer, scale = 1, autoOrient = false): ProcessedStl {
+/** Z-up thô (mm) → scale → Y-up → (tuỳ chọn) tự xoay hướng in tốt nhất → phân tích. */
+export function prepareMesh(rawZUp: Float32Array, scale: number, autoOrient: boolean): ProcessedStl {
+  return prepareYUpMesh(orientZUpToYUp(scale === 1 ? rawZUp : scalePositions(rawZUp, scale)), 1, autoOrient)
+}
+
+/** Như prepareMesh nhưng đầu vào đã là Y-up (tâm XZ = 0, minY = 0, scale 1): dùng khi đổi inch / hướng. */
+export function prepareYUpMesh(yUp: Float32Array, scale: number, autoOrient: boolean): ProcessedStl {
+  let positions = scale === 1 ? yUp : scalePositions(yUp, scale)
+  let rotated = false
+  if (autoOrient) {
+    const best = findBestDown(positions)
+    rotated = best.down[1] > -0.99999
+    if (rotated) positions = applyDown(positions, best.down)
+  }
+  return { positions, stats: analyzeMesh(positions), rotated }
+}
+
+/** Parse STL (binary hoặc ASCII) → toạ độ thô Z-up (mm), kiểm tra hợp lệ. */
+export function parseStlPositions(buffer: ArrayBuffer): Float32Array {
   let raw: Float32Array
   try {
     raw = parsePositions(buffer)
@@ -49,14 +63,10 @@ export function processStl(buffer: ArrayBuffer, scale = 1, autoOrient = false): 
   }
   if (raw.length < 9) throw new StlParseError(INVALID)
   for (let i = 0; i < raw.length; i++) if (!Number.isFinite(raw[i])) throw new StlParseError(NOT_FINITE)
+  return raw
+}
 
-  const scaled = scale === 1 ? raw : scalePositions(raw, scale)
-  let positions = orientZUpToYUp(scaled)
-  let rotated = false
-  if (autoOrient) {
-    const best = findBestDown(positions)
-    rotated = best.down[1] > -0.99999
-    if (rotated) positions = applyDown(positions, best.down)
-  }
-  return { positions, stats: analyzeMesh(positions), rotated }
+/** Parse STL → scale → Y-up → (tuỳ chọn) tự xoay hướng in tốt nhất → phân tích. */
+export function processStl(buffer: ArrayBuffer, scale = 1, autoOrient = false): ProcessedStl {
+  return prepareMesh(parseStlPositions(buffer), scale, autoOrient)
 }
