@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import vm from 'node:vm'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { makeTicket, signEnvelope, verifyEnvelope } from '../worker/shared/hmac.ts'
+import { makeFileTicket, makeTicket, signEnvelope, verifyEnvelope } from '../worker/shared/hmac.ts'
 
 const SECRET = 'test-shared-secret'
 const CODE = 'P3D-261120-AAAA'
@@ -37,8 +37,16 @@ function load(): Fake {
   } as unknown as Fake
   const folderObj = (n: string) => ({
     getUrl: () => `https://drive/${n}`,
-    getFilesByName: (name: string) => ({ hasNext: () => f.folders.get(n)!.includes(name) }),
-    createFile: (blob: { name: string }) => void f.folders.get(n)!.push(blob.name),
+    getFilesByName: (name: string) => ({
+      hasNext: () => f.folders.get(n)!.includes(name),
+      next: () => ({ getUrl: () => `https://drive/${n}/${name}` }),
+    }),
+    // createFile trả về file vừa tạo, giống DriveApp thật
+
+    createFile: (blob: { name: string }) => {
+      f.folders.get(n)!.push(blob.name)
+      return { getUrl: () => `https://drive/${n}/${blob.name}` }
+    },
   })
   const ctx: Record<string, unknown> = {
     console: { error: () => {}, log: () => {} },
@@ -58,7 +66,7 @@ function load(): Fake {
     },
     Utilities: {
       base64Decode: (s: string) => Buffer.from(s, 'base64'),
-      newBlob: (_b: unknown, _t: string, name: string) => ({ name }),
+      newBlob: (_b: unknown, t: string, name: string) => ({ name, type: t }),
       Charset: { UTF_8: 'UTF_8' },
       // Giống Apps Script: trả mảng byte có dấu (-128..127). Không truyền charset thì Apps Script
       // không mã hoá chuỗi theo UTF-8 (chữ có dấu ra chữ ký khác Worker) — giả lập bằng latin1.
@@ -106,7 +114,7 @@ describe('Apps Script upload', () => {
   it('valid ticket → 1 folder, callback to WORKER_URL/api/internal/file with a verifiable envelope', async () => {
     expect(post(await upload())).toEqual({ ok: true, orderCode: CODE })
     expect([...f.folders.keys()]).toEqual([CODE])
-    expect(f.folders.get(CODE)).toEqual(['a.stl'])
+    expect(f.folders.get(CODE)).toEqual(['01-a.stl'])
     expect(f.fetches).toHaveLength(1)
     const { url, options } = f.fetches[0]
     expect(url).toBe('https://w.example/api/internal/file')
@@ -114,7 +122,8 @@ describe('Apps Script upload', () => {
     expect(options.contentType).toBe('application/json')
     expect(options.muteHttpExceptions).toBe(true)
     const verified = await verifyEnvelope(SECRET, JSON.parse(options.payload))
-    expect(verified).toEqual({ action: 'fileSaved', data: { orderCode: CODE, driveUrl: `https://drive/${CODE}` } })
+    expect(verified).toEqual({ action: 'fileSaved', data: { orderCode: CODE, fileNo: 1, driveUrl: `https://drive/${CODE}`, fileUrl: `https://drive/${CODE}/01-a.stl` },
+    })
   })
 
   it('bad or expired ticket → ok:false, no folder', async () => {
@@ -139,7 +148,7 @@ describe('Apps Script upload', () => {
     expect(post(p).ok).toBe(true)
     expect(post(p).ok).toBe(true)
     expect([...f.folders.keys()]).toEqual([CODE])
-    expect(f.folders.get(CODE)).toEqual(['a.stl'])
+    expect(f.folders.get(CODE)).toEqual(['01-a.stl'])
   })
 
   it('oversize base64 → 35MB error', async () => {
@@ -173,7 +182,76 @@ describe('Apps Script upload', () => {
 
   it('sanitizes file names', async () => {
     post(await upload({ fileName: 'a/b:c.stl' }))
-    expect(f.folders.get(CODE)).toEqual(['a_b_c.stl'])
+    expect(f.folders.get(CODE)).toEqual(['01-a_b_c.stl'])
+  })
+})
+
+describe('Apps Script multi-file', () => {
+  const up = async (fileNo: number, over: Record<string, unknown> = {}) => ({
+    orderCode: CODE,
+    fileNo,
+    uploadTicket: await makeFileTicket(SECRET, CODE, fileNo, 3),
+    fileName: 'part.stl',
+    fileSize: 3,
+    fileBase64: 'AQID',
+    ...over,
+  })
+
+  it('accepts new ticket with fileNo', async () => {
+    expect(post(await up(2))).toEqual({ ok: true, orderCode: CODE })
+    expect(f.folders.get(CODE)).toEqual(['02-part.stl'])
+  })
+
+  it('accepts old ticket without fileNo as file 1', async () => {
+    expect(post(await upload())).toEqual({ ok: true, orderCode: CODE })
+    expect(f.folders.get(CODE)).toEqual(['01-a.stl'])
+  })
+
+  it('rejects new ticket for another fileNo', async () => {
+    const msg = 'Phiên gửi file đã hết hạn, vui lòng gửi lại đơn'
+    expect(post(await up(2, { uploadTicket: await makeFileTicket(SECRET, CODE, 3, 3) }))).toEqual({ ok: false, error: msg })
+    expect(f.folders.size).toBe(0)
+  })
+
+  it('rejects fileNo outside integer 0..99', async () => {
+    const msg = 'Phiên gửi file đã hết hạn, vui lòng gửi lại đơn'
+    for (const bad of [-1, 100, 1.5, '2', null]) {
+      const p = await up(2, { fileNo: bad })
+      expect(post(p)).toEqual({ ok: false, error: msg })
+    }
+    expect(f.folders.size).toBe(0)
+  })
+
+  it('saves two files with the same name as distinct files', async () => {
+    expect(post(await up(1)).ok).toBe(true)
+    expect(post(await up(2)).ok).toBe(true)
+    expect(f.folders.get(CODE)).toEqual(['01-part.stl', '02-part.stl'])
+  })
+
+  it('fileSaved callback carries fileNo and fileUrl', async () => {
+    post(await up(2))
+    const verified = await verifyEnvelope(SECRET, JSON.parse(f.fetches[0].options.payload))
+    expect(verified).toEqual({
+      action: 'fileSaved',
+      data: { orderCode: CODE, fileNo: 2, driveUrl: `https://drive/${CODE}`, fileUrl: `https://drive/${CODE}/02-part.stl` },
+    })
+  })
+
+  it('stores plate as 00-ban-in.3mf', async () => {
+    expect(post(await up(0, { fileName: 'ban-in.3mf' })).ok).toBe(true)
+    expect(f.folders.get(CODE)).toEqual(['00-ban-in.3mf'])
+  })
+
+  it('resending an existing name returns that file URL', async () => {
+    post(await up(1))
+    post(await up(1))
+    expect(f.folders.get(CODE)).toEqual(['01-part.stl'])
+    const last = await verifyEnvelope(SECRET, JSON.parse(f.fetches[1].options.payload))
+    expect((last!.data as { fileUrl: string }).fileUrl).toBe(`https://drive/${CODE}/01-part.stl`)
+  })
+
+  it('missing file → Thiếu file', async () => {
+    expect(post(await up(1, { fileBase64: '' }))).toEqual({ ok: false, error: 'Thiếu file' })
   })
 })
 
