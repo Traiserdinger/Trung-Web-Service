@@ -38,3 +38,27 @@ export function priceQuote(
     rangeHigh: roundTo(total * (1 + spread), r.roundTo),
   }
 }
+
+/** Giá cho một bàn in nhiều món: phí theo món cộng sau hệ số an toàn, mức tối thiểu riêng. */
+export function priceCombined(
+  e: Pick<PrintEstimate, 'grams' | 'timeSec'>,
+  m: MaterialConfig,
+  itemCount: number,
+  r: PricingRules = pricingRules,
+): PriceQuote | null {
+  if (m.contactOnly || m.pricePerGram === null) return null
+  const materialCost = e.grams * m.pricePerGram
+  const minutes = Math.ceil(e.timeSec / 60)
+  const timeFee = computeTimeFee(minutes, r)
+  const itemFee = Math.max(0, itemCount - 1) * r.perItemFee
+  const total = Math.max(r.combinedMinimumOrder, ceilTo((materialCost + timeFee) * r.safetyMargin + itemFee, r.roundTo))
+  const spread = r.rangePercent / 100
+  return {
+    materialCost,
+    minutes,
+    timeFee,
+    total,
+    rangeLow: Math.max(r.combinedMinimumOrder, roundTo(total * (1 - spread), r.roundTo)),
+    rangeHigh: roundTo(total * (1 + spread), r.roundTo),
+  }
+}

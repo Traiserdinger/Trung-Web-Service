@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import type { MeshStats } from './meshAnalysis'
-import { countLayers, estimatePrint, shouldSuggestSupport, type PrintSettings } from './slicerEstimator'
+import { printerConfig, slicerConfig } from '../config/pricingConfig'
+import {
+  countLayers,
+  estimatePart,
+  estimatePlate,
+  estimatePrint,
+  shouldSuggestSupport,
+  type PrintSettings,
+} from './slicerEstimator'
 
 const cube: MeshStats = {
   dims: { length: 10, width: 10, height: 10 },
@@ -72,5 +80,41 @@ describe('shouldSuggestSupport', () => {
   it('suggests support at or above 100 mm² of overhang', () => {
     expect(shouldSuggestSupport({ ...cube, overhangArea: 300 })).toBe(true)
     expect(shouldSuggestSupport({ ...cube, overhangArea: 50 })).toBe(false)
+  })
+})
+
+const box = (l: number, w: number, h: number): MeshStats => ({
+  dims: { length: l, width: w, height: h },
+  surfaceArea: 2 * (l * w + l * h + w * h),
+  volume: l * w * h,
+  signedVolume: l * w * h,
+  isWatertight: true,
+  overhangArea: 0,
+  triangleCount: 12,
+})
+
+describe('multi-file plate estimates', () => {
+  it('estimatePrint with platesOverride=1 drops one warmup and purge', () => {
+    const stats = box(50, 50, 10) // grid fits 9 per plate
+    const s = { ...base, quantity: 10 }
+    const grid = estimatePrint(stats, s)
+    const one = estimatePrint(stats, s, slicerConfig, printerConfig.bed, 1)
+    expect(grid.plates).toBe(2)
+    expect(one.plates).toBe(1)
+    expect(grid.timeSec - one.timeSec).toBeCloseTo(slicerConfig.warmupSec)
+    expect(grid.grams - one.grams).toBeCloseTo(slicerConfig.purgeGrams)
+  })
+
+  it('estimatePlate sums parts and adds one warmup and purge', () => {
+    const a = { stats: box(20, 20, 10), settings: { infillPercent: 15, wallLoops: 2, support: false, quantity: 2 } }
+    const b = { stats: box(30, 10, 40), settings: { infillPercent: 50, wallLoops: 3, support: true, quantity: 1 } }
+    const shared = { material: 'PETG' as const, layerHeight: 0.2 as const }
+    const pa = estimatePart(a.stats, { ...shared, ...a.settings })
+    const pb = estimatePart(b.stats, { ...shared, ...b.settings })
+    const e = estimatePlate([a, b], shared)
+    expect(e.timeSec).toBeCloseTo(2 * pa.partTimeSec + pb.partTimeSec + slicerConfig.warmupSec)
+    expect(e.grams).toBeCloseTo(((2 * pa.partVolume + pb.partVolume) / 1000) * 1.27 + slicerConfig.purgeGrams)
+    expect(e.plates).toBe(1)
+    expect(e.copiesPerPlate).toBe(3)
   })
 })

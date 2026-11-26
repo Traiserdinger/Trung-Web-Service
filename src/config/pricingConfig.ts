@@ -92,6 +92,16 @@ export const slicerConfig = {
   platePaddingMm: 5,
   /** Cạnh lớn nhất nhỏ hơn mức này (mm) thì nghi file tính bằng inch */
   inchSuspectMaxMm: 5,
+  /** Món cao hơn mức này (mm) thì khoảng hở rộng hơn khi xếp bàn */
+  tallItemMm: 60,
+  /** Khoảng hở cho món cao, mm */
+  tallPaddingMm: 8,
+  /** Mép bàn không xếp, mm */
+  bedMarginMm: 3,
+  /** Bước góc thử khi xếp bàn, độ */
+  arrangeAngleStepDeg: 15,
+  /** Ngân sách thời gian xếp bàn, ms */
+  arrangeBudgetMs: 1000,
 }
 export type SlicerConfig = typeof slicerConfig
 
@@ -109,6 +119,10 @@ export const pricingRules = {
   safetyMargin: 1.05,
   /** Làm tròn giá theo bội số này, VNĐ */
   roundTo: 1000,
+  /** Phí cộng thêm cho mỗi món từ món thứ 2 (sau hệ số an toàn), VNĐ */
+  perItemFee: 3500,
+  /** Giá tối thiểu khi đơn có từ 2 món, VNĐ */
+  combinedMinimumOrder: 30000,
 }
 export type PricingRules = typeof pricingRules
 
@@ -116,6 +130,8 @@ export const fileLimits = {
   previewMaxBytes: 100 * 1024 * 1024,
   uploadMaxBytes: 35 * 1024 * 1024,
 }
+
+export const multiPlate = { maxItems: 10, maxTotalBytes: 35 * 1024 * 1024 }
 
 export const uiOptions: {
   layerHeights: { value: LayerHeight; label: string }[]
