@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createOrder, trackOrder } from './api'
 import { OrderSubmitError } from './submitOrder'
-import type { OrderMeta } from '../utils/orderPayload'
+import type { LegacyOrderMeta } from '../utils/orderPayload'
 
-const meta = { orderCode: 'P3D-261120-AAAA', colorId: 3 } as OrderMeta
+const meta = { orderCode: 'P3D-261120-AAAA', colorId: 3 } as LegacyOrderMeta
 const reply = (body: unknown) => vi.fn(async () => new Response(JSON.stringify(body)))
 
 describe('createOrder', () => {

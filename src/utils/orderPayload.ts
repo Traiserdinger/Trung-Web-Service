@@ -1,7 +1,8 @@
 import { fileLimits } from '../config/pricingConfig'
 import type { Dims, MeshStats } from './meshAnalysis'
 import type { OrderType, QuoteState } from './quoteState'
-import type { PrintSettings } from './slicerEstimator'
+import type { Placement } from './plateArrange'
+import type { PrintSettings, SharedSettings } from './slicerEstimator'
 
 export interface CustomerInfo {
   name: string
@@ -70,8 +71,58 @@ export interface OrderPayload {
   createdAt: string
 }
 
-/** Phần metadata của đơn gửi lên Worker (file được tải lên riêng bằng vé). */
-export type OrderMeta = Omit<OrderPayload, 'fileBase64'> & { colorId: number }
+/** Payload một file của giao diện hiện tại; Task 10 xoá khi giao diện chuyển sang `OrderMeta` nhiều file. */
+export type LegacyOrderMeta = Omit<OrderPayload, 'fileBase64'> & { colorId: number }
+
+export interface OrderMetaFile {
+  /** 0 = file bàn in (role 'plate'); 1…n = file nguồn */
+  fileNo: number
+  role: 'source' | 'plate'
+  fileName: string
+  fileSize: number
+  fileType: 'stl' | '3mf'
+  fileDelivery: 'upload' | 'zalo'
+}
+
+export interface OrderMetaItem {
+  itemNo: number
+  fileNo: number
+  name: string
+  dims: Dims
+  volume: number
+  surfaceArea: number
+  scale: number
+  orient: 'auto' | 'file' | 'face'
+  infillPercent: number
+  wallLoops: number
+  support: boolean
+  quantity: number
+  placements: Placement[] | null
+  footprint: [number, number][] | null
+}
+
+/** Metadata đơn nhiều file gửi lên Worker (file được tải lên riêng bằng vé từng file). */
+export interface OrderMeta {
+  orderCode: string
+  orderType: OrderType
+  consultReasons: string[]
+  customer: { name: string; phone: string; email: string; note: string }
+  colorId: number
+  shared: SharedSettings
+  files: OrderMetaFile[]
+  items: OrderMetaItem[]
+  estimate: {
+    grams: number
+    timeSec: number
+    total: number
+    rangeLow: number
+    rangeHigh: number
+    separateTotal: number | null
+  } | null
+  turnstileToken: string | null
+  honeypot: string
+  createdAt: string
+}
 
 export function buildOrderPayload(a: {
   orderCode: string

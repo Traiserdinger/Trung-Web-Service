@@ -22,6 +22,7 @@ export interface TrackView {
   colorName: string
   colorHex: string
   quantity: number
+  items: { name: string; quantity: number }[]
   estimateTotal: number | null
   status: OrderStatus
   events: { status: OrderStatus; note: string | null; at: string }[]

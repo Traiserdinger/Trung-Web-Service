@@ -181,6 +181,8 @@ export async function listOrderItems(db: D1Database, code: string): Promise<Orde
 }
 
 // Đánh dấu một file đã lưu Drive, đặt URL thư mục và tính lại trạng thái tổng hợp của đơn.
+// Cả hai câu lệnh chạy trong một batch và câu thứ hai tính trạng thái từ order_files ngay trong SQL,
+// nên hai lần gọi gần như cùng lúc không thể để orders.file_status cũ (định nghĩa mẫu: aggregateFileStatus).
 // true nếu có file đang chờ được cập nhật.
 export async function setFileSaved(
   db: D1Database,
@@ -189,19 +191,23 @@ export async function setFileSaved(
   fileUrl: string,
   folderUrl: string,
 ): Promise<boolean> {
-  const r = await db
-    .prepare(
-      "UPDATE order_files SET file_status = 'saved', drive_url = ? WHERE order_code = ? AND file_no = ? AND file_status = 'pending'",
-    )
-    .bind(fileUrl, code, fileNo)
-    .run()
-  if ((r.meta.changes ?? 0) === 0) return false
-  const status = aggregateFileStatus(await listOrderFiles(db, code))
-  await db
-    .prepare('UPDATE orders SET drive_url = ?, file_status = ? WHERE code = ?')
-    .bind(folderUrl, status, code)
-    .run()
-  return true
+  const [r] = await db.batch([
+    db
+      .prepare(
+        "UPDATE order_files SET file_status = 'saved', drive_url = ? WHERE order_code = ? AND file_no = ? AND file_status = 'pending'",
+      )
+      .bind(fileUrl, code, fileNo),
+    db
+      .prepare(
+        `UPDATE orders SET drive_url = ?3, file_status = CASE
+           WHEN EXISTS (SELECT 1 FROM order_files WHERE order_code = ?1 AND role = 'source' AND file_delivery = 'zalo') THEN 'zalo'
+           WHEN EXISTS (SELECT 1 FROM order_files WHERE order_code = ?1 AND role = 'source' AND file_status != 'saved') THEN 'pending'
+           ELSE 'saved' END
+         WHERE code = ?1 AND EXISTS (SELECT 1 FROM order_files WHERE order_code = ?1 AND file_no = ?2 AND file_status = 'saved')`,
+      )
+      .bind(code, fileNo, folderUrl),
+  ])
+  return (r.meta.changes ?? 0) > 0
 }
 
 export async function listEvents(db: D1Database, code: string): Promise<OrderEvent[]> {

@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { insertOrder, type OrderRow } from '../shared/orderRepo.ts'
+import { insertOrder, type OrderFileRow, type OrderItemRow, type OrderRow } from '../shared/orderRepo.ts'
 import { fakeAssets, fakeCtx, makeEnv } from '../test/env.ts'
 import { makeSessionCookie } from './auth.ts'
 import { createAdminHandler } from './index.ts'
@@ -236,5 +236,24 @@ describe('danh sách', () => {
     expect(p1?.orders.find((o: { code: string }) => o.code === 'P3D-250103-AAAA')?.fileStatus).toBe('pending')
     const p2 = (await call(env, 'GET', '/api/orders?page=2')).body
     expect(p2?.orders).toHaveLength(1)
+  })
+})
+
+describe('chi tiết đơn nhiều file', () => {
+  it('admin detail returns files and items', async () => {
+    const env = adminEnv()
+    const f: OrderFileRow = {
+      orderCode: CODE, fileNo: 1, role: 'source', fileName: 'a.stl', fileSize: 5, fileType: 'stl',
+      fileDelivery: 'upload', fileStatus: 'pending', driveUrl: null,
+    }
+    const it: OrderItemRow = {
+      orderCode: CODE, itemNo: 1, fileNo: 1, name: 'a.stl', dims: '{}', volume: 1, surfaceArea: 1, scale: 1, orient: 'auto',
+      infillPercent: 15, wallLoops: 2, support: 0, quantity: 3, placements: null, footprint: null,
+    }
+    await insertOrder(env.DB, row(), [f], [it])
+    const { body } = await call(env, 'GET', `/api/orders/${CODE}`)
+    expect(body?.files).toEqual([f])
+    expect(body?.items).toEqual([it])
+    expect(body?.order.code).toBe(CODE)
   })
 })

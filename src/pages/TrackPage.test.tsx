@@ -11,6 +11,7 @@ const view = (over: Partial<TrackView> = {}): TrackView => ({
   colorName: 'Đen',
   colorHex: '#1f1f1f',
   quantity: 2,
+  items: [],
   estimateTotal: 150000,
   status: 'printing',
   events: [

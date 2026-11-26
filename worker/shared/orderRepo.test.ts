@@ -93,6 +93,22 @@ describe('orderRepo multi-file', () => {
     expect((await getOrder(db, CODE))?.fileStatus).toBe('pending')
   })
 
+  it('setFileSaved: two saves in either order end saved', async () => {
+    for (const order of [[1, 2], [2, 1]]) {
+      const db = createFakeD1()
+      await insertOrder(db, row(), twoSourcesAndPlate(), [item(1, 1), item(2, 2)])
+      for (const n of order) await setFileSaved(db, CODE, n, `https://d/${n}`, 'https://d/folder')
+      expect((await getOrder(db, CODE))?.fileStatus).toBe('saved')
+    }
+  })
+
+  it('setFileSaved: zalo order stays zalo', async () => {
+    const db = createFakeD1()
+    await insertOrder(db, row({ fileStatus: 'zalo' }), [file(1, { fileDelivery: 'zalo', fileStatus: 'zalo' }), file(2)], [item(1, 1)])
+    await setFileSaved(db, CODE, 2, 'https://d/2', 'https://d/folder')
+    expect((await getOrder(db, CODE))?.fileStatus).toBe('zalo')
+  })
+
   it('deleteOrder removes files and items', async () => {
     const db = createFakeD1()
     await insertOrder(db, row(), twoSourcesAndPlate(), [item(1, 1)])

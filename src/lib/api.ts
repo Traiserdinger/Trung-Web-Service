@@ -1,5 +1,5 @@
 import type { TrackView } from '../shared/orderStatus'
-import type { OrderMeta } from '../utils/orderPayload'
+import type { LegacyOrderMeta } from '../utils/orderPayload'
 import { OrderSubmitError } from './submitOrder'
 
 const NETWORK = 'Không gửi được, kiểm tra mạng và thử lại'
@@ -13,7 +13,7 @@ export interface CreatedOrder {
 }
 
 /** Bước 1: ghi đơn (không kèm file) qua Worker cùng origin. */
-export async function createOrder(meta: OrderMeta, fetchFn: typeof fetch = fetch): Promise<CreatedOrder> {
+export async function createOrder(meta: LegacyOrderMeta, fetchFn: typeof fetch = fetch): Promise<CreatedOrder> {
   let res: { ok?: boolean; error?: string; orderCode?: string; uploadTicket?: string | null; trackUrl?: string
     preview?: boolean
     fileStatus?: string

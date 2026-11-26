@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { signEnvelope } from '../shared/hmac.ts'
-import { getOrder, insertOrder, type OrderFileRow, type OrderRow } from '../shared/orderRepo.ts'
+import { getOrder, insertOrder, listOrderFiles, type OrderFileRow, type OrderRow } from '../shared/orderRepo.ts'
 import { makeEnv } from '../test/env.ts'
 import { handleInternalFile } from './internal.ts'
 
@@ -49,5 +49,39 @@ describe('POST /api/internal/file', () => {
     const res = await post(env, unknown)
     expect(res.status).toBe(404)
     expect(await res.json()).toEqual({ ok: false })
+  })
+
+  const file2: OrderFileRow = { ...fileRow, fileNo: 2, fileName: 'b.stl' }
+
+  it('internal fileSaved with fileNo updates that file', async () => {
+    const env = makeEnv()
+    await insertOrder(env.DB, row, [fileRow, file2], [])
+    const e = await signEnvelope('s', 'fileSaved', { orderCode: row.code, fileNo: 2, driveUrl: 'https://drive/folder', fileUrl: 'https://drive/b' })
+    expect(await (await post(env, e)).json()).toEqual({ ok: true })
+    const files = await listOrderFiles(env.DB, row.code)
+    expect(files.find((f) => f.fileNo === 2)).toMatchObject({ fileStatus: 'saved', driveUrl: 'https://drive/b' })
+    expect(files.find((f) => f.fileNo === 1)?.fileStatus).toBe('pending')
+    const o = await getOrder(env.DB, row.code)
+    expect(o).toMatchObject({ fileStatus: 'pending', driveUrl: 'https://drive/folder' })
+  })
+
+  it('internal fileSaved without fileNo updates file 1', async () => {
+    const env = makeEnv()
+    await insertOrder(env.DB, row, [fileRow, file2], [])
+    const e = await signEnvelope('s', 'fileSaved', { orderCode: row.code, driveUrl: 'https://drive/folder' })
+    expect((await post(env, e)).status).toBe(200)
+    const files = await listOrderFiles(env.DB, row.code)
+    expect(files.find((f) => f.fileNo === 1)).toMatchObject({ fileStatus: 'saved', driveUrl: 'https://drive/folder' })
+    expect(files.find((f) => f.fileNo === 2)?.fileStatus).toBe('pending')
+  })
+
+  it('fileNo không hợp lệ → 400; fileNo không tồn tại → ok nhưng không đổi gì', async () => {
+    const env = makeEnv()
+    await insertOrder(env.DB, row, [fileRow], [])
+    const bad = await signEnvelope('s', 'fileSaved', { orderCode: row.code, fileNo: 'x', driveUrl: 'u' })
+    expect((await post(env, bad)).status).toBe(400)
+    const none = await signEnvelope('s', 'fileSaved', { orderCode: row.code, fileNo: 9, driveUrl: 'u' })
+    expect((await post(env, none)).status).toBe(200)
+    expect((await getOrder(env.DB, row.code))?.fileStatus).toBe('pending')
   })
 })

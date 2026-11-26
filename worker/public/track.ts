@@ -2,7 +2,7 @@ import { normalizeVnPhone } from '../../src/utils/orderPayload.ts'
 import type { OrderStatus, TrackView } from '../../src/shared/orderStatus.ts'
 import type { Env } from '../shared/env.ts'
 import { json, readJson } from '../shared/http.ts'
-import { getOrder, listEvents } from '../shared/orderRepo.ts'
+import { getOrder, listEvents, listOrderItems } from '../shared/orderRepo.ts'
 import { hit } from '../shared/rateLimit.ts'
 
 const NOT_FOUND = 'Không tìm thấy đơn. Kiểm tra lại mã đơn và SĐT.'
@@ -35,13 +35,15 @@ export async function handleTrack(req: Request, env: Env): Promise<Response> {
   const settings = parse(order.settings)
   const estimate = parse(order.estimate)
   const events = await listEvents(env.DB, order.code)
+  const items = (await listOrderItems(env.DB, order.code)).map((i) => ({ name: i.name, quantity: i.quantity }))
   const view: TrackView = {
     code: order.code,
     createdAt: order.createdAt,
     material: typeof settings.material === 'string' ? settings.material : '',
     colorName: order.colorName ?? '',
     colorHex: order.colorHex ?? '',
-    quantity: typeof settings.quantity === 'number' ? settings.quantity : 1,
+    quantity: items.length ? items.reduce((n, i) => n + i.quantity, 0) : typeof settings.quantity === 'number' ? settings.quantity : 1,
+    items,
     estimateTotal: typeof estimate.total === 'number' ? estimate.total : null,
     status: order.status as OrderStatus,
     events: events.map((e) => ({ status: e.status as OrderStatus, note: e.note, at: e.createdAt })),

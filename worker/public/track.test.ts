@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { insertOrder, type OrderRow } from '../shared/orderRepo.ts'
+import { insertOrder, type OrderItemRow, type OrderRow } from '../shared/orderRepo.ts'
 import { makeEnv } from '../test/env.ts'
 import { handleTrack } from './track.ts'
 
@@ -51,5 +51,24 @@ describe('POST /api/track', () => {
     expect(res.status).toBe(429)
     expect(await res.json()).toEqual({ ok: false, error: 'Bạn tra cứu quá nhiều lần, thử lại sau 10 phút' })
     expect((await track(env, { code: row.code, phone: '0913014605' }, '2.2.2.2')).status).toBe(200)
+  })
+
+  it('track returns item names and quantities', async () => {
+    const env = makeEnv()
+    const it = (itemNo: number, name: string, quantity: number): OrderItemRow => ({
+      orderCode: row.code, itemNo, fileNo: 1, name, dims: '{}', volume: 1, surfaceArea: 1, scale: 1, orient: null,
+      infillPercent: 15, wallLoops: 2, support: 0, quantity, placements: null, footprint: null,
+    })
+    await insertOrder(env.DB, row, [], [it(1, 'moc-khoa.stl', 2), it(2, 'de-dien-thoai.stl', 1)])
+    const body = JSON.parse(await (await track(env, { code: row.code, phone: '0913014605' })).text())
+    expect(body.order.items).toEqual([{ name: 'moc-khoa.stl', quantity: 2 }, { name: 'de-dien-thoai.stl', quantity: 1 }])
+    expect(body.order.quantity).toBe(3)
+  })
+
+  it('đơn không có món (đơn cũ chưa chuyển): items rỗng, quantity từ settings', async () => {
+    const env = await seeded()
+    const body = JSON.parse(await (await track(env, { code: row.code, phone: '0913014605' })).text())
+    expect(body.order.items).toEqual([])
+    expect(body.order.quantity).toBe(2)
   })
 })
