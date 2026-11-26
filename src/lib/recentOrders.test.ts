@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { clearRecentOrders, listRecentOrders, recentSummary, saveRecentOrder } from './recentOrders'
 
 function memStorage(init: Record<string, string> = {}) {
@@ -54,6 +54,19 @@ describe('recent orders', () => {
     saveRecentOrder({ code: 'A', createdAt: 'd', summary: 's' }, s)
     clearRecentOrders(s)
     expect(listRecentOrders(s)).toEqual([])
+  })
+
+  it('swallows a throwing localStorage getter when no storage is passed', () => {
+    const spy = vi.spyOn(globalThis, 'localStorage', 'get').mockImplementation(() => {
+      throw new Error('denied')
+    })
+    try {
+      expect(listRecentOrders()).toEqual([])
+      expect(() => saveRecentOrder({ code: 'A', createdAt: 'd', summary: 's' })).not.toThrow()
+      expect(() => clearRecentOrders()).not.toThrow()
+    } finally {
+      spy.mockRestore()
+    }
   })
 
   it('recentSummary', () => {

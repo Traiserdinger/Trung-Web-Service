@@ -125,6 +125,13 @@ describe('OrderForm', () => {
     expect(name).toHaveAccessibleDescription('Vui lòng nhập họ tên')
   })
 
+  it('shows the Zalo hand-off message when a local file could not be uploaded (e.g. unreadable)', async () => {
+    setup(vi.fn(async (p: OrderMeta) => ({ orderCode: p.orderCode, trackUrl: '', preview: false, files: [{ fileNo: 1, uploaded: false }] })))
+    await fillValid()
+    await userEvent.click(screen.getByRole('button', { name: 'Gửi đơn' }))
+    expect(await screen.findByText(/file chưa gửi được.*Zalo/)).toBeInTheDocument()
+  })
+
   it('locks the close button and reports busy while sending', async () => {
     const onBusyChange = vi.fn()
     const submit = vi.fn(() => new Promise<{ orderCode: string; trackUrl: string; files: { fileNo: number; uploaded: boolean }[] }>(() => {}))

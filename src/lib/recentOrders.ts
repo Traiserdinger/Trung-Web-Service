@@ -14,9 +14,9 @@ const isRecent = (o: unknown): o is RecentOrder =>
   typeof (o as RecentOrder).summary === 'string'
 
 /** Đơn gần đây trên máy này, mới nhất trước. Chỉ mã, ngày, tóm tắt — không lưu SĐT/tên/email. */
-export function listRecentOrders(storage: Storage = localStorage): RecentOrder[] {
+export function listRecentOrders(storage?: Storage): RecentOrder[] {
   try {
-    const raw = storage.getItem(KEY)
+    const raw = (storage ?? localStorage).getItem(KEY)
     if (!raw) return []
     const parsed: unknown = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
@@ -29,19 +29,20 @@ export function listRecentOrders(storage: Storage = localStorage): RecentOrder[]
   }
 }
 
-export function saveRecentOrder(o: RecentOrder, storage: Storage = localStorage): void {
+export function saveRecentOrder(o: RecentOrder, storage?: Storage): void {
   try {
     const entry = { code: o.code, createdAt: o.createdAt, summary: o.summary }
-    const rest = listRecentOrders(storage).filter((x) => x.code !== o.code)
-    storage.setItem(KEY, JSON.stringify([entry, ...rest].slice(0, MAX)))
+    const st = storage ?? localStorage
+    const rest = listRecentOrders(st).filter((x) => x.code !== o.code)
+    st.setItem(KEY, JSON.stringify([entry, ...rest].slice(0, MAX)))
   } catch {
     /* bộ nhớ đầy hoặc bị chặn: bỏ qua */
   }
 }
 
-export function clearRecentOrders(storage: Storage = localStorage): void {
+export function clearRecentOrders(storage?: Storage): void {
   try {
-    storage.removeItem(KEY)
+    ;(storage ?? localStorage).removeItem(KEY)
   } catch {
     /* bỏ qua */
   }

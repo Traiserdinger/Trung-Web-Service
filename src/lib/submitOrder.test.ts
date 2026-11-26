@@ -56,6 +56,27 @@ describe('submitOrder', () => {
     expect(r.files).toEqual([{ fileNo: 1, uploaded: false }, { fileNo: 2, uploaded: true }, { fileNo: 0, uploaded: true }])
   })
 
+  it('an unreadable blob is not uploaded but later files still upload', async () => {
+    const transport = okTransport()
+    const bad = new Blob([new Uint8Array([1])])
+    const spy = vi.spyOn(FileReader.prototype, 'readAsDataURL').mockImplementationOnce(function (this: FileReader) {
+      queueMicrotask(() => this.onerror?.(new ProgressEvent('error') as ProgressEvent<FileReader>))
+    })
+    try {
+      const m = blobs([2])
+      m.set(1, bad)
+      const r = await submitOrder(metaOf([file(1), file(2)]), m, {
+        url: 'https://x',
+        transport,
+        fetchFn: created([{ fileNo: 1, ticket: 'a' }, { fileNo: 2, ticket: 'b' }]),
+      })
+      expect(r.files).toEqual([{ fileNo: 1, uploaded: false }, { fileNo: 2, uploaded: true }])
+      expect(transport).toHaveBeenCalledTimes(1)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
   it('Apps Script ok:false or broken JSON counts as not uploaded', async () => {
     for (const text of [JSON.stringify({ ok: false }), '<html>']) {
       const r = await submitOrder(metaOf([file(1)]), blobs([1]), {
