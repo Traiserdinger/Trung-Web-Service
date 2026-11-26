@@ -3,7 +3,7 @@ import { callAppsScript } from '../shared/appsScript.ts'
 import type { Env } from '../shared/env.ts'
 import { makeTicket } from '../shared/hmac.ts'
 import { json, readJson } from '../shared/http.ts'
-import { getColor, getOrder, insertOrder, type OrderRow } from '../shared/orderRepo.ts'
+import { getColor, getOrder, insertOrder, type OrderFileRow, type OrderItemRow, type OrderRow } from '../shared/orderRepo.ts'
 import { formatOwnerMessage } from '../shared/ownerMessage.ts'
 import { hit, unhit } from '../shared/rateLimit.ts'
 
@@ -150,8 +150,20 @@ export async function handleCreateOrder(req: Request, env: Env, ctx: ExecutionCo
     status: 'received',
     statusUpdatedAt: now,
   }
+  // Tạm thời (Task 8 thay bằng payload nhiều file): đơn cũ = 1 file nguồn + 1 món.
+  const st = (m.settings ?? {}) as unknown as Record<string, unknown>
+  const fileRow: OrderFileRow = {
+    orderCode: code, fileNo: 1, role: 'source', fileName, fileSize: m.fileSize ?? 0, fileType: 'stl',
+    fileDelivery, fileStatus: fileDelivery === 'zalo' ? 'zalo' : 'pending', driveUrl: null,
+  }
+  const itemRow: OrderItemRow = {
+    orderCode: code, itemNo: 1, fileNo: 1, name: fileName, dims: row.dims ?? 'null', volume: m.volume ?? 0,
+    surfaceArea: m.surfaceArea ?? 0, scale, orient: null, infillPercent: Number(st.infillPercent),
+    wallLoops: Number(st.wallLoops), support: st.support ? 1 : 0, quantity: Number(st.quantity),
+    placements: null, footprint: null,
+  }
   try {
-    await insertOrder(env.DB, row)
+    await insertOrder(env.DB, row, [fileRow], [itemRow])
   } catch (err) {
     console.error('insertOrder', err)
     try {

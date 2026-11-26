@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { signEnvelope } from '../shared/hmac.ts'
-import { getOrder, insertOrder, type OrderRow } from '../shared/orderRepo.ts'
+import { getOrder, insertOrder, type OrderFileRow, type OrderRow } from '../shared/orderRepo.ts'
 import { makeEnv } from '../test/env.ts'
 import { handleInternalFile } from './internal.ts'
 
@@ -12,13 +12,17 @@ const row: OrderRow = {
   colorHex: '#1f1f1f', fileName: 'a.stl', fileSize: 1, fileDelivery: 'upload', fileStatus: 'pending',
   driveUrl: null, fingerprint: 'f', status: 'received', statusUpdatedAt: '2025-01-01T00:00:00.000Z',
 }
+const fileRow: OrderFileRow = {
+  orderCode: row.code, fileNo: 1, role: 'source', fileName: 'a.stl', fileSize: 1, fileType: 'stl',
+  fileDelivery: 'upload', fileStatus: 'pending', driveUrl: null,
+}
 const post = (env: ReturnType<typeof makeEnv>, body: unknown) =>
   handleInternalFile(new Request('https://site/api/internal/file', { method: 'POST', body: JSON.stringify(body) }), env)
 
 describe('POST /api/internal/file', () => {
   it('chữ ký đúng → saved + drive_url; gọi lại vẫn ok', async () => {
     const env = makeEnv()
-    await insertOrder(env.DB, row)
+    await insertOrder(env.DB, row, [fileRow], [])
     const env1 = await signEnvelope('s', 'fileSaved', { orderCode: row.code, driveUrl: 'https://drive/x' })
     expect(await (await post(env, env1)).json()).toEqual({ ok: true })
     const o = await getOrder(env.DB, row.code)
@@ -31,7 +35,7 @@ describe('POST /api/internal/file', () => {
 
   it('sig sai → 401, không đổi DB', async () => {
     const env = makeEnv()
-    await insertOrder(env.DB, row)
+    await insertOrder(env.DB, row, [fileRow], [])
     const bad = await signEnvelope('wrong', 'fileSaved', { orderCode: row.code, driveUrl: 'https://drive/x' })
     expect((await post(env, bad)).status).toBe(401)
     expect((await getOrder(env.DB, row.code))?.fileStatus).toBe('pending')

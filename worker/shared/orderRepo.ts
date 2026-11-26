@@ -66,7 +66,52 @@ export async function getOrder(db: D1Database, code: string): Promise<OrderRow |
   return db.prepare(`SELECT ${ORDER_COLS} FROM orders WHERE code = ?`).bind(code).first<OrderRow>()
 }
 
-export async function insertOrder(db: D1Database, o: OrderRow): Promise<void> {
+export interface OrderFileRow {
+  orderCode: string
+  fileNo: number
+  role: 'source' | 'plate'
+  fileName: string
+  fileSize: number
+  fileType: 'stl' | '3mf'
+  fileDelivery: 'upload' | 'zalo'
+  fileStatus: 'pending' | 'saved' | 'zalo'
+  driveUrl: string | null
+}
+
+export interface OrderItemRow {
+  orderCode: string
+  itemNo: number
+  fileNo: number
+  name: string
+  dims: string
+  volume: number
+  surfaceArea: number
+  scale: number
+  orient: string | null
+  infillPercent: number
+  wallLoops: number
+  support: number
+  quantity: number
+  placements: string | null
+  footprint: string | null
+}
+
+// Trạng thái tổng hợp của đơn, chỉ tính file nguồn (file bàn in bỏ qua).
+export function aggregateFileStatus(
+  files: Pick<OrderFileRow, 'role' | 'fileStatus' | 'fileDelivery'>[],
+): 'pending' | 'saved' | 'zalo' {
+  const sources = files.filter((f) => f.role === 'source')
+  if (sources.some((f) => f.fileDelivery === 'zalo')) return 'zalo'
+  if (sources.some((f) => f.fileStatus !== 'saved')) return 'pending'
+  return 'saved'
+}
+
+export async function insertOrder(
+  db: D1Database,
+  o: OrderRow,
+  files: OrderFileRow[] = [],
+  items: OrderItemRow[] = [],
+): Promise<void> {
   await db.batch([
     db
       .prepare(
@@ -82,6 +127,26 @@ export async function insertOrder(db: D1Database, o: OrderRow): Promise<void> {
         o.colorId, o.colorName, o.colorHex, o.fileName, o.fileSize, o.fileDelivery, o.fileStatus,
         o.driveUrl, o.fingerprint, o.status, o.statusUpdatedAt,
       ),
+    ...files.map((f) =>
+      db
+        .prepare(
+          `INSERT INTO order_files (order_code, file_no, role, file_name, file_size, file_type, file_delivery,
+            file_status, drive_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(o.code, f.fileNo, f.role, f.fileName, f.fileSize, f.fileType, f.fileDelivery, f.fileStatus, f.driveUrl),
+    ),
+    ...items.map((i) =>
+      db
+        .prepare(
+          `INSERT INTO order_items (order_code, item_no, file_no, name, dims, volume, surface_area, scale, orient,
+            infill_percent, wall_loops, support, quantity, placements, footprint)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          o.code, i.itemNo, i.fileNo, i.name, i.dims, i.volume, i.surfaceArea, i.scale, i.orient,
+          i.infillPercent, i.wallLoops, i.support, i.quantity, i.placements, i.footprint,
+        ),
+    ),
     db
       .prepare(
         'INSERT INTO order_events (order_code, status, note, created_at, email_sent) VALUES (?, ?, NULL, ?, NULL)',
@@ -90,13 +155,53 @@ export async function insertOrder(db: D1Database, o: OrderRow): Promise<void> {
   ])
 }
 
-// Đánh dấu file đã lưu Drive; true nếu có đơn đang chờ file được cập nhật.
-export async function setFileSaved(db: D1Database, code: string, driveUrl: string): Promise<boolean> {
+export async function listOrderFiles(db: D1Database, code: string): Promise<OrderFileRow[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT order_code AS orderCode, file_no AS fileNo, role, file_name AS fileName, file_size AS fileSize,
+        file_type AS fileType, file_delivery AS fileDelivery, file_status AS fileStatus, drive_url AS driveUrl
+       FROM order_files WHERE order_code = ? ORDER BY file_no`,
+    )
+    .bind(code)
+    .all<OrderFileRow>()
+  return results
+}
+
+export async function listOrderItems(db: D1Database, code: string): Promise<OrderItemRow[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT order_code AS orderCode, item_no AS itemNo, file_no AS fileNo, name, dims, volume,
+        surface_area AS surfaceArea, scale, orient, infill_percent AS infillPercent, wall_loops AS wallLoops,
+        support, quantity, placements, footprint
+       FROM order_items WHERE order_code = ? ORDER BY item_no`,
+    )
+    .bind(code)
+    .all<OrderItemRow>()
+  return results
+}
+
+// Đánh dấu một file đã lưu Drive, đặt URL thư mục và tính lại trạng thái tổng hợp của đơn.
+// true nếu có file đang chờ được cập nhật.
+export async function setFileSaved(
+  db: D1Database,
+  code: string,
+  fileNo: number,
+  fileUrl: string,
+  folderUrl: string,
+): Promise<boolean> {
   const r = await db
-    .prepare("UPDATE orders SET file_status = 'saved', drive_url = ? WHERE code = ? AND file_status = 'pending'")
-    .bind(driveUrl, code)
+    .prepare(
+      "UPDATE order_files SET file_status = 'saved', drive_url = ? WHERE order_code = ? AND file_no = ? AND file_status = 'pending'",
+    )
+    .bind(fileUrl, code, fileNo)
     .run()
-  return (r.meta.changes ?? 0) > 0
+  if ((r.meta.changes ?? 0) === 0) return false
+  const status = aggregateFileStatus(await listOrderFiles(db, code))
+  await db
+    .prepare('UPDATE orders SET drive_url = ?, file_status = ? WHERE code = ?')
+    .bind(folderUrl, status, code)
+    .run()
+  return true
 }
 
 export async function listEvents(db: D1Database, code: string): Promise<OrderEvent[]> {
@@ -187,6 +292,8 @@ export async function setEventEmailSent(db: D1Database, eventId: number, sent: b
 export async function deleteOrder(db: D1Database, code: string): Promise<void> {
   await db.batch([
     db.prepare('DELETE FROM order_events WHERE order_code = ?').bind(code),
+    db.prepare('DELETE FROM order_files WHERE order_code = ?').bind(code),
+    db.prepare('DELETE FROM order_items WHERE order_code = ?').bind(code),
     db.prepare('DELETE FROM orders WHERE code = ?').bind(code),
   ])
 }

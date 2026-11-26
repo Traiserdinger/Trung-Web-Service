@@ -10,6 +10,7 @@ export async function handleInternalFile(req: Request, env: Env): Promise<Respon
   const d = verified.data as { orderCode?: unknown; driveUrl?: unknown } | null
   if (!d || typeof d.orderCode !== 'string' || typeof d.driveUrl !== 'string') return json({ ok: false }, 400)
   if (!(await getOrder(env.DB, d.orderCode))) return json({ ok: false }, 404)
-  await setFileSaved(env.DB, d.orderCode, d.driveUrl)
+  // Tạm thời (Task 8): chưa có fileNo → file 1, URL thư mục = URL file.
+  await setFileSaved(env.DB, d.orderCode, 1, d.driveUrl, d.driveUrl)
   return json({ ok: true })
 }

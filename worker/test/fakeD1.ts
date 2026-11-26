@@ -16,10 +16,21 @@ const MIGRATIONS = join(import.meta.dirname, '../../migrations')
 
 type SqlValue = null | number | bigint | string | NodeJS.ArrayBufferView
 
-// DB D1 giả trong bộ nhớ, đã chạy mọi migrations/*.sql.
-export function createFakeD1(): D1Database {
+const migrationFiles = () => readdirSync(MIGRATIONS).filter((n) => n.endsWith('.sql')).sort()
+
+// Chạy một migration theo tiền tố số (vd '0003'); dùng với createFakeD1({ upTo }).
+const migrators = new WeakMap<object, (prefix: string) => void>()
+export function applyMigration(d1: D1Database, prefix: string): void {
+  const fn = migrators.get(d1)
+  if (!fn) throw new Error('không phải DB giả')
+  fn(prefix)
+}
+
+// DB D1 giả trong bộ nhớ, đã chạy mọi migrations/*.sql (hoặc đến tiền tố upTo).
+export function createFakeD1(opts: { upTo?: string } = {}): D1Database {
   const db = new DatabaseSync(':memory:')
-  for (const f of readdirSync(MIGRATIONS).filter((n) => n.endsWith('.sql')).sort()) {
+  for (const f of migrationFiles()) {
+    if (opts.upTo && f.slice(0, opts.upTo.length) > opts.upTo) continue
     db.exec(readFileSync(join(MIGRATIONS, f), 'utf8'))
   }
 
@@ -52,7 +63,7 @@ export function createFakeD1(): D1Database {
     }
   }
 
-  return {
+  const d1 = {
     prepare: (sql: string) => new Stmt(sql),
     // D1 batch là một giao dịch: lỗi thì hoàn tác tất cả.
     async batch(stmts: Stmt[]) {
@@ -68,4 +79,8 @@ export function createFakeD1(): D1Database {
       }
     },
   } as unknown as D1Database
+  migrators.set(d1, (prefix) => {
+    for (const f of migrationFiles()) if (f.startsWith(prefix)) db.exec(readFileSync(join(MIGRATIONS, f), 'utf8'))
+  })
+  return d1
 }
