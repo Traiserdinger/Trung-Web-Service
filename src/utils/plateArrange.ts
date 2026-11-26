@@ -227,7 +227,19 @@ function limitHull(h: P2[]): P2[] {
 
 // ---------------------------------------------------------------- arrangement
 
-/** Dilated occupancy of one copy at one rotation, on the 1 mm grid, relative to the placement origin. */
+/** Occupancy grid cell, mm. Origins move in whole cells as well. */
+const CELL = 0.5
+/** Coarse pass step, cells (3 mm). */
+const COARSE_STEP = 6
+/** Fine pass step, cells (1 mm); a one-cell hill-climb finishes the job. */
+const FINE_STEP = 2
+const NEIGHBOURS: [number, number][] = [
+  [0, -1], [-1, 0], [1, 0], [0, 1], [-1, -1], [1, -1], [-1, 1], [1, 1],
+]
+/** Corner score: top edge first, then right edge (both < this many mm). */
+const CORNER_K = 1e4
+
+/** Grown occupancy of one copy at one rotation, in CELL units, relative to the placement origin. */
 interface Mask {
   offI: number
   offJ: number
@@ -246,13 +258,17 @@ interface Rotation {
   maxU: number
   minV: number
   maxV: number
-  mask: Mask
+  /** checked against the normal layer (and written there by normal copies) */
+  low: Mask
+  /** checked against the tall layer (and written there by tall copies); null when nothing is tall */
+  high: Mask | null
 }
 
 interface Item {
   index: number
   input: ArrangeInput
   area: number
+  tall: boolean
   rotations: Rotation[]
 }
 
@@ -263,26 +279,13 @@ interface Candidate {
   y: number
 }
 
-const COARSE_STEP = 3
-
-function buildRotation(fp: Footprint, deg: number, pad: number): Rotation {
-  const t = (deg * Math.PI) / 180
-  const c = Math.cos(t)
-  const s = Math.sin(t)
-  let minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity
-  for (const [u, v] of fp.hull) {
-    const x = u * c - v * s
-    const y = u * s + v * c
-    if (x < minU) minU = x
-    if (x > maxU) maxU = x
-    if (y < minV) minV = y
-    if (y > maxV) maxV = y
-  }
-
-  // Mask M: every 1 mm cell that the footprint overlaps, plus every cell that may come closer than
-  // pad/2 to it. If two copies are closer than pad, the cell holding the midpoint of their nearest
-  // points is within pad/2 of a boundary footprint cell of each, so both masks contain it; if they
-  // overlap, a shared point's cell is in both. So disjoint masks ⇒ the copies are ≥ pad apart.
+/**
+ * Every CELL-grid cell that the footprint (rotated by (c, s)) overlaps, plus every cell that may
+ * come closer than `radius` to it. If two copies grown by r1 and r2 are closer than r1 + r2, the
+ * cell holding the point that splits their nearest-point segment r1 : r2 is in both masks; if they
+ * overlap, a shared point's cell is in both. So disjoint masks mean the copies are ≥ r1 + r2 apart.
+ */
+function buildMask(fp: Footprint, c: number, s: number, radius: number): RawMask {
   const res = fp.res
   const cells = fp.cells
   const n = cells.length / 2
@@ -310,11 +313,11 @@ function buildRotation(fp: Footprint, deg: number, pad: number): Rotation {
     if (y < cj0) cj0 = y
     if (y > cj1) cj1 = y
   }
-  const reach = pad / 2 + ext
-  const I0 = Math.floor(ci0 - reach) - 1
-  const J0 = Math.floor(cj0 - reach) - 1
-  const mW = Math.floor(ci1 + reach) + 1 - I0 + 1
-  const mH = Math.floor(cj1 + reach) + 1 - J0 + 1
+  const reach = radius + ext
+  const I0 = Math.floor((ci0 - reach) / CELL) - 1
+  const J0 = Math.floor((cj0 - reach) / CELL) - 1
+  const mW = Math.floor((ci1 + reach) / CELL) + 1 - I0 + 1
+  const mH = Math.floor((cj1 + reach) / CELL) + 1 - J0 + 1
   const M = new Uint8Array(mW * mH)
 
   // footprint occupancy, to tell boundary cells (an empty 8-neighbour) from interior ones
@@ -323,13 +326,12 @@ function buildRotation(fp: Footprint, deg: number, pad: number): Rotation {
   const F = new Uint8Array(FW * FH)
   for (let k = 0; k < n; k++) F[(cells[2 * k + 1] - fj0 + 1) * FW + cells[2 * k] - fi0 + 1] = 1
 
-  const r2 = pad / 2
   for (let k = 0; k < n; k++) {
     const x = cxs[k]
     const y = cys[k]
     // cells the footprint cell overlaps (via its rotated bounding box)
-    for (let j = Math.floor(y - ext); j <= Math.floor(y + ext); j++) {
-      for (let i = Math.floor(x - ext); i <= Math.floor(x + ext); i++) M[(j - J0) * mW + i - I0] = 1
+    for (let j = Math.floor((y - ext) / CELL); j <= Math.floor((y + ext) / CELL); j++) {
+      for (let i = Math.floor((x - ext) / CELL); i <= Math.floor((x + ext) / CELL); i++) M[(j - J0) * mW + i - I0] = 1
     }
     const fx = cells[2 * k] - fi0 + 1
     const fy = cells[2 * k + 1] - fj0 + 1
@@ -343,65 +345,133 @@ function buildRotation(fp: Footprint, deg: number, pad: number): Rotation {
       }
     }
     if (interior) continue
-    // Boundary cell: mark 1 mm cells t whose distance to it may be < pad/2. With q the point of
+    // Boundary cell: mark grid cells t whose distance to it may be < radius. With q the point of
     // t nearest the centre and n the unit vector from q to the centre, every point of the rotated
-    // cell is at least |centre − q| − (half-extent along n) from t.
-    for (let j = Math.floor(y - reach); j <= Math.floor(y + reach); j++) {
-      const qy = Math.min(Math.max(y, j), j + 1)
+    // cell is at least |centre − q| − (half-extent along n) from t; a projection gap on any
+    // separating axis is a lower bound too. Neither ever exceeds the true distance.
+    for (let j = Math.floor((y - reach) / CELL); j <= Math.floor((y + reach) / CELL); j++) {
+      const b0 = j * CELL
+      const b1 = b0 + CELL
+      const qy = Math.min(Math.max(y, b0), b1)
       const row = (j - J0) * mW - I0
-      for (let i = Math.floor(x - reach); i <= Math.floor(x + reach); i++) {
+      for (let i = Math.floor((x - reach) / CELL); i <= Math.floor((x + reach) / CELL); i++) {
         if (M[row + i]) continue
-        const qx = Math.min(Math.max(x, i), i + 1)
+        const a0 = i * CELL
+        const a1 = a0 + CELL
+        const qx = Math.min(Math.max(x, a0), a1)
         const ddx = x - qx
         const ddy = y - qy
-        const d = Math.hypot(ddx, ddy)
+        const d = Math.sqrt(ddx * ddx + ddy * ddy)
         if (d === 0) {
           M[row + i] = 1
           continue
         }
         const along = (half * (Math.abs(ddx * c + ddy * s) + Math.abs(-ddx * s + ddy * c))) / d
-        if (d - along >= r2) continue
-        // That bound is loose off the axes; the projection gap on any axis is a lower bound too.
-        if (axisGap(x, y, half, ext, c, s, i, j) >= r2) continue
+        if (d - along >= radius) continue
+        if (axisGap(x, y, half, ext, c, s, a0, a1, b0, b1) >= radius) continue
         M[row + i] = 1
       }
     }
   }
 
-  const words = Math.ceil(mW / 32)
-  const rows = new Uint32Array(mH * words)
-  for (let j = 0; j < mH; j++) {
-    for (let i = 0; i < mW; i++) {
-      if (M[j * mW + i]) rows[j * words + (i >> 5)] |= 1 << (i & 31)
+  return { M, w: mW, h: mH, i0: I0, j0: J0 }
+}
+
+/** A mask as one byte per cell, before packing into row bitmasks. */
+interface RawMask {
+  M: Uint8Array
+  w: number
+  h: number
+  i0: number
+  j0: number
+}
+
+/**
+ * The same mask for the footprint turned a further 90° anticlockwise. The grid is symmetric
+ * under quarter turns about the origin (a cell corner), and every test in buildMask is
+ * rotation-equivariant, so cell (I, J) simply maps to (−J − 1, I).
+ */
+function rot90(r: RawMask): RawMask {
+  const { M, w, h } = r
+  const out = new Uint8Array(w * h)
+  for (let j = 0; j < h; j++) {
+    for (let i = 0; i < w; i++) if (M[j * w + i]) out[i * h + (h - 1 - j)] = 1
+  }
+  return { M: out, w: h, h: w, i0: -r.j0 - h, j0: r.i0 }
+}
+
+function finishMask(r: RawMask): Mask {
+  const { M, w, h } = r
+  const words = Math.ceil(w / 32)
+  const rows = new Uint32Array(h * words)
+  for (let j = 0; j < h; j++) {
+    for (let i = 0; i < w; i++) {
+      if (M[j * w + i]) rows[j * words + (i >> 5)] |= 1 << (i & 31)
     }
   }
-  return {
-    deg,
-    minU,
-    maxU,
-    minV,
-    maxV,
-    mask: { offI: I0, offJ: J0, h: mH, words, rows, bbox: setBox(M, mW, mH), core: largestRect(M, mW, mH) },
-  }
+  return { offI: r.i0, offJ: r.j0, h, words, rows, bbox: setBox(M, w, h), core: largestRect(M, w, h) }
 }
 
 /**
  * Largest gap between the projections of a rotated square (centre (x, y), half side `half`, axes
- * (c, s) and (−s, c)) and the unit cell [i, i+1] × [j, j+1], over the four edge normals. Never
- * more than their true distance.
+ * (c, s) and (−s, c)) and the box [a0, a1] × [b0, b1], over the four edge normals. Never more
+ * than their true distance.
  */
-function axisGap(x: number, y: number, half: number, ext: number, c: number, s: number, i: number, j: number): number {
-  // world axes: the square spans ±ext
-  let g = Math.max(i - (x + ext), x - ext - (i + 1), j - (y + ext), y - ext - (j + 1))
-  // square axes: the square spans ±half, the cell's corners project to [lo, hi]
-  for (const [ax, ay] of [[c, s], [-s, c]]) {
-    const p = x * ax + y * ay
-    const a = i * ax, b = (i + 1) * ax, e = j * ay, f = (j + 1) * ay
-    const lo = Math.min(a, b) + Math.min(e, f)
-    const hi = Math.max(a, b) + Math.max(e, f)
-    g = Math.max(g, lo - (p + half), p - half - hi)
-  }
-  return g
+function axisGap(
+  x: number,
+  y: number,
+  half: number,
+  ext: number,
+  c: number,
+  s: number,
+  a0: number,
+  a1: number,
+  b0: number,
+  b1: number,
+): number {
+  const g = Math.max(a0 - (x + ext), x - ext - a1, b0 - (y + ext), y - ext - b1)
+  return Math.max(g, projGap(x, y, half, c, s, a0, a1, b0, b1), projGap(x, y, half, -s, c, a0, a1, b0, b1))
+}
+
+/** Gap along axis (ax, ay) between a square of half side `half` centred at (x, y) and a box. */
+function projGap(x: number, y: number, half: number, ax: number, ay: number, a0: number, a1: number, b0: number, b1: number): number {
+  const p = x * ax + y * ay
+  const lo = Math.min(a0 * ax, a1 * ax) + Math.min(b0 * ay, b1 * ay)
+  const hi = Math.max(a0 * ax, a1 * ax) + Math.max(b0 * ay, b1 * ay)
+  return Math.max(lo - (p + half), p - half - hi)
+}
+
+/**
+ * All rotations of one item. When the angle step divides 90°, masks are only computed for angles
+ * below 90° and the rest are quarter turns of those (4× less work, and exact).
+ */
+function buildRotations(fp: Footprint, angles: number[], rLow: number, rHigh: number | null): Rotation[] {
+  const quarter = Math.round(90 / (angles[1] ?? 360))
+  const byQuarter = angles.length > 1 && Math.abs(quarter * angles[1] - 90) < EPS
+  const raws: { low: RawMask; high: RawMask | null }[] = []
+  return angles.map((deg, k) => {
+    const t = (deg * Math.PI) / 180
+    const c = Math.cos(t)
+    const s = Math.sin(t)
+    let minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity
+    for (const [u, v] of fp.hull) {
+      const x = u * c - v * s
+      const y = u * s + v * c
+      if (x < minU) minU = x
+      if (x > maxU) maxU = x
+      if (y < minV) minV = y
+      if (y > maxV) maxV = y
+    }
+    let raw: { low: RawMask; high: RawMask | null }
+    if (byQuarter && k >= quarter) {
+      const prev = raws[k - quarter]
+      raw = { low: rot90(prev.low), high: prev.high && rot90(prev.high) }
+    } else {
+      raw = { low: buildMask(fp, c, s, rLow), high: rHigh === null ? null : buildMask(fp, c, s, rHigh) }
+    }
+    raws.push(raw)
+    return { deg, minU, maxU, minV, maxV, low: finishMask(raw.low), high: raw.high && finishMask(raw.high) }
+  })
 }
 
 function setBox(M: Uint8Array, w: number, h: number): [number, number, number, number] {
@@ -455,6 +525,7 @@ class Grid {
 
   readonly width: number
   readonly height: number
+  empty = true
 
   constructor(width: number, height: number) {
     this.width = width
@@ -517,6 +588,7 @@ class Grid {
   }
 
   add(m: Mask, col: number, row: number) {
+    this.empty = false
     const sh = col & 31
     for (let r = 0; r < m.h; r++) {
       const base = (row + r) * this.words + (col >> 5)
@@ -557,11 +629,204 @@ function positions(lo: number, hi: number, step: number): number[] {
 
 const defaultClock = () => (typeof performance !== 'undefined' ? performance.now() : Date.now())
 
+/** 'centre': compact group + height-weighted pull to the bed centre. 'corner': bottom-left fill. */
+type Mode = 'centre' | 'corner'
+
+interface PackResult {
+  fits: boolean
+  placed: number
+  placements: Record<string, Placement[]>
+}
+
+interface PackContext {
+  inputs: ArrangeInput[]
+  items: Item[]
+  bed: BedSize
+  margin: number
+  border: number
+  workBudget: number
+  /** hard wall-clock backstop */
+  outOfTime: () => boolean
+}
+
+function pack(ctx: PackContext, mode: Mode): PackResult {
+  const { bed, margin, border, items } = ctx
+  const placements: Record<string, Placement[]> = {}
+  for (const inp of ctx.inputs) placements[inp.itemId] = []
+  const gw = Math.ceil(bed.x / CELL) + 2 * border
+  const gh = Math.ceil(bed.y / CELL) + 2 * border
+  const lowGrid = new Grid(gw, gh)
+  const highGrid = new Grid(gw, gh)
+  const cx = bed.x / 2
+  const cy = bed.y / 2
+  let gx0 = Infinity, gx1 = -Infinity, gy0 = Infinity, gy1 = -Infinity
+  let fits = true
+  let placed = 0
+  let work = 0
+  const overBudget = () => work > ctx.workBudget || ctx.outOfTime()
+
+  /** 0 when free, otherwise how many columns to the right are certainly blocked too. */
+  const blocked = (rot: Rotation, X: number, Y: number): number => {
+    const a = lowGrid.empty ? 0 : lowGrid.blocked(rot.low, X + rot.low.offI + border, Y + rot.low.offJ + border)
+    if (a > 0 || highGrid.empty || !rot.high) return a
+    return highGrid.blocked(rot.high, X + rot.high.offI + border, Y + rot.high.offJ + border)
+  }
+
+  for (const item of items) {
+    const { input } = item
+    if (item.rotations.length === 0) {
+      fits = false
+      continue
+    }
+    const h = input.height
+    for (let copy = 0; copy < input.copies; copy++) {
+      let best: Candidate | null = null
+      // Score of origin (X, Y) in cells; lower is better. Same formula as inlined in the scan.
+      const scoreAt = (rot: Rotation, X: number, Y: number): number => {
+        const x0 = X * CELL + rot.minU
+        const x1 = X * CELL + rot.maxU
+        const y0 = Y * CELL + rot.minV
+        const y1 = Y * CELL + rot.maxV
+        if (mode === 'corner') return y1 * CORNER_K + x1
+        const empty = gx0 === Infinity
+        const ySpan = empty ? y1 - y0 : Math.max(gy1, y1) - Math.min(gy0, y0)
+        const area = empty ? (x1 - x0) * ySpan : (Math.max(gx1, x1) - Math.min(gx0, x0)) * ySpan
+        const dx = (x0 + x1) / 2 - cx
+        const dy = (y0 + y1) / 2 - cy
+        return area + h * Math.sqrt(dx * dx + dy * dy)
+      }
+      const scan = (step: number, stoppable: boolean) => {
+        const slack = (v: number) => v * (1 + 1e-12) + 1e-9
+        for (let r = 0; r < item.rotations.length; r++) {
+          if (stoppable && overBudget()) return
+          const rot = item.rotations[r]
+          const { minU, maxU, minV, maxV } = rot
+          const xLo = Math.ceil((margin - minU) / CELL - 1e-9)
+          const xHi = Math.floor((bed.x - margin - maxU) / CELL + 1e-9)
+          const yLo = Math.ceil((margin - minV) / CELL - 1e-9)
+          const yHi = Math.floor((bed.y - margin - maxV) / CELL + 1e-9)
+          if (xLo > xHi || yLo > yHi) continue
+          const xs = positions(xLo, xHi, step)
+          const empty = gx0 === Infinity
+          const xSpanMin = empty ? maxU - minU : Math.max(gx1 - gx0, maxU - minU)
+          const ys = positions(yLo, yHi, step)
+          // centre mode: rows nearest the bed centre first, so a good best turns up early
+          if (mode === 'centre') {
+            const mid = (cy - (minV + maxV) / 2) / CELL
+            ys.sort((p, q) => Math.abs(p - mid) - Math.abs(q - mid) || p - q)
+          }
+          for (const Y of ys) {
+            if (stoppable && work > ctx.workBudget) return
+            const y0 = Y * CELL + minV
+            const y1 = Y * CELL + maxV
+            const ySpan = empty ? y1 - y0 : Math.max(gy1, y1) - Math.min(gy0, y0)
+            const dy = (y0 + y1) / 2 - cy
+            // Lower bound for every x on this row; skip rows that cannot beat the best.
+            const bound =
+              mode === 'centre' ? xSpanMin * ySpan + h * Math.abs(dy) : y1 * CORNER_K + (xLo * CELL + maxU)
+            if (best && bound > slack(best.score)) continue
+            let skipTo = -Infinity
+            for (const X of xs) {
+              if (X < skipTo) continue
+              work++
+              const x0 = X * CELL + minU
+              const x1 = X * CELL + maxU
+              let score: number
+              if (mode === 'centre') {
+                const area = empty ? (x1 - x0) * ySpan : (Math.max(gx1, x1) - Math.min(gx0, x0)) * ySpan
+                const dx = (x0 + x1) / 2 - cx
+                score = area + h * Math.sqrt(dx * dx + dy * dy)
+              } else score = y1 * CORNER_K + x1
+              if (best && !better(score, r, X, Y, best)) {
+                if (mode === 'corner') break // the corner score only grows along a row
+                continue
+              }
+              const skip = blocked(rot, X, Y)
+              if (skip > 0) {
+                skipTo = X + skip
+                continue
+              }
+              if (best) {
+                best.score = score
+                best.r = r
+                best.x = X
+                best.y = Y
+              } else best = { score, r, x: X, y: Y }
+            }
+          }
+        }
+      }
+
+      // Slide the winner one cell at a time while a neighbouring spot is better and free, so it
+      // settles into contact at full grid resolution.
+      const refine = () => {
+        for (;;) {
+          const cur = best as Candidate
+          const rot = item.rotations[cur.r]
+          const xLo = Math.ceil((margin - rot.minU) / CELL - 1e-9)
+          const xHi = Math.floor((bed.x - margin - rot.maxU) / CELL + 1e-9)
+          const yLo = Math.ceil((margin - rot.minV) / CELL - 1e-9)
+          const yHi = Math.floor((bed.y - margin - rot.maxV) / CELL + 1e-9)
+          let next: Candidate | null = null
+          for (const [dx, dy] of NEIGHBOURS) {
+            const X = cur.x + dx
+            const Y = cur.y + dy
+            if (X < xLo || X > xHi || Y < yLo || Y > yHi) continue
+            work++
+            const score = scoreAt(rot, X, Y)
+            if (!better(score, cur.r, X, Y, next ?? cur)) continue
+            if (blocked(rot, X, Y) > 0) continue
+            next = { score, r: cur.r, x: X, y: Y }
+          }
+          if (!next) return
+          best = next
+        }
+      }
+
+      const coarseOnly = overBudget()
+      scan(COARSE_STEP, false)
+      // Fine pass on a FINE_STEP lattice (the coarse best only prunes), cut short once the work
+      // budget is spent, unless the coarse grid found nowhere at all; then the hill-climb.
+      if (!coarseOnly || !best) scan(best ? FINE_STEP : 1, best !== null)
+      if (best) refine()
+
+      const chosen = best as Candidate | null
+      if (!chosen) {
+        fits = false
+        continue
+      }
+      const rot = item.rotations[chosen.r]
+      if (item.tall) {
+        const m = rot.high as Mask
+        highGrid.add(m, chosen.x + m.offI + border, chosen.y + m.offJ + border)
+      } else lowGrid.add(rot.low, chosen.x + rot.low.offI + border, chosen.y + rot.low.offJ + border)
+      const x = chosen.x * CELL
+      const y = chosen.y * CELL
+      gx0 = Math.min(gx0, x + rot.minU)
+      gx1 = Math.max(gx1, x + rot.maxU)
+      gy0 = Math.min(gy0, y + rot.minV)
+      gy1 = Math.max(gy1, y + rot.maxV)
+      placements[input.itemId].push({ x, y, rotDeg: rot.deg })
+      placed++
+    }
+  }
+  return { fits, placed, placements }
+}
+
 /**
- * Packs every copy onto the bed (spec §7.5). Deterministic: the chosen spot for each copy is the
- * lexicographic minimum of (score, angle, y, x) over all feasible 1 mm positions. When the time
- * budget runs out the remaining copies are searched on the coarse grid only; every placement is
- * still checked against the occupancy grid, so the result is always valid.
+ * Packs every copy onto the bed (spec §7.5).
+ *
+ * Spacing: copies keep `platePaddingMm` apart; a copy taller than `tallItemMm` keeps
+ * `tallPaddingMm` from every neighbour. Two layers make that exact: normal copies are grown by
+ * pad/2 on the normal layer, tall copies by tallPad/2 on the tall layer, and a candidate checks
+ * each layer with the radius that adds up to the gap it needs.
+ *
+ * Search: the centre-anchored greedy first (tall copies near the middle); if it does not fit
+ * everything, a bottom-left fill is tried and the better result kept. Deterministic: each copy's
+ * spot is the lexicographic minimum of (score, angle, y, x) over feasible 0.5 mm origins, and the
+ * search is limited by a work budget (`arrangeWorkBudget` candidates per strategy), after which
+ * only the coarse grid is scanned. The wall clock (`arrangeBudgetMs`) is only a hard backstop.
+ * Every placement is checked against the occupancy layers, so the result is always valid.
  */
 export function arrangePlate(
   inputs: ArrangeInput[],
@@ -570,109 +835,46 @@ export function arrangePlate(
   clock: () => number = defaultClock,
 ): ArrangeResult {
   const t0 = clock()
-  const placements: Record<string, Placement[]> = {}
-  for (const inp of inputs) placements[inp.itemId] = []
-
   const step = cfg.arrangeAngleStepDeg
   const angles: number[] = []
   for (let k = 0; k * step < 360 - EPS; k++) angles.push(k * step)
 
+  const plate = cfg.platePaddingMm
+  const tallGap = Math.max(cfg.tallPaddingMm, plate)
+  const isTall = (inp: ArrangeInput) => inp.height > cfg.tallItemMm
+  const anyTall = inputs.some((inp) => inp.copies > 0 && isTall(inp))
+
   const items: Item[] = inputs
-    .map((input, index) => ({
-      index,
-      input,
-      area: (input.footprint.cells.length / 2) * input.footprint.res ** 2,
-      rotations: [] as Rotation[],
-    }))
-    .filter((it) => it.input.copies > 0)
+    .filter((input) => input.copies > 0)
+    .map((input) => {
+      const tall = isTall(input)
+      const fp = input.footprint
+      const usable = fp.cells.length > 0 && fp.hull.length > 0
+      return {
+        index: inputs.indexOf(input),
+        input,
+        tall,
+        area: (fp.cells.length / 2) * fp.res ** 2,
+        rotations: usable
+          ? buildRotations(fp, angles, tall ? tallGap - plate / 2 : plate / 2, anyTall ? tallGap / 2 : null)
+          : [],
+      }
+    })
     .sort((a, b) => b.area - a.area || b.input.height - a.input.height || a.index - b.index)
 
-  // grid cells around the bed, so dilated masks never leave the grid
-  const BORDER = Math.ceil(Math.max(cfg.platePaddingMm, cfg.tallPaddingMm) / 2) + 8
-  const grid = new Grid(bed.x + 2 * BORDER, bed.y + 2 * BORDER)
-  const margin = cfg.bedMarginMm
-  const cx = bed.x / 2
-  const cy = bed.y / 2
-  let gx0 = Infinity, gx1 = -Infinity, gy0 = Infinity, gy1 = -Infinity
-  let fits = true
-
-  const exhausted = () => clock() - t0 > cfg.arrangeBudgetMs
-
-  for (const item of items) {
-    const { input } = item
-    if (input.footprint.cells.length === 0 || input.footprint.hull.length === 0) {
-      fits = false
-      continue
-    }
-    const pad = input.height > cfg.tallItemMm ? cfg.tallPaddingMm : cfg.platePaddingMm
-    item.rotations = angles.map((deg) => buildRotation(input.footprint, deg, pad))
-
-    for (let copy = 0; copy < input.copies; copy++) {
-      let best: Candidate | null = null
-      const h = input.height
-      const scan = (stepMm: number, stopWhenExhausted: boolean) => {
-        for (let r = 0; r < item.rotations.length; r++) {
-          if (stopWhenExhausted && exhausted()) return
-          const rot = item.rotations[r]
-          const { mask, minU, maxU, minV, maxV } = rot
-          const xLo = Math.ceil(margin - minU - 1e-9)
-          const xHi = Math.floor(bed.x - margin - maxU + 1e-9)
-          const yLo = Math.ceil(margin - minV - 1e-9)
-          const yHi = Math.floor(bed.y - margin - maxV + 1e-9)
-          if (xLo > xHi || yLo > yHi) continue
-          const xs = positions(xLo, xHi, stepMm)
-          const empty = gx0 === Infinity
-          const xSpanMin = empty ? maxU - minU : Math.max(gx1 - gx0, maxU - minU)
-          for (const y of positions(yLo, yHi, stepMm)) {
-            const y0 = y + minV
-            const y1 = y + maxV
-            const ySpan = empty ? y1 - y0 : Math.max(gy1, y1) - Math.min(gy0, y0)
-            const dy = (y0 + y1) / 2 - cy
-            // Lower bound for every x on this row; skip rows that cannot beat the best.
-            if (best && xSpanMin * ySpan + h * Math.abs(dy) > best.score * (1 + 1e-12) + 1e-9) continue
-            let skipTo = -Infinity
-            for (const x of xs) {
-              if (x < skipTo) continue
-              const x0 = x + minU
-              const x1 = x + maxU
-              const area = empty ? (x1 - x0) * ySpan : (Math.max(gx1, x1) - Math.min(gx0, x0)) * ySpan
-              const score = area + h * Math.hypot((x0 + x1) / 2 - cx, dy)
-              if (best && !better(score, r, x, y, best)) continue
-              const skip = grid.blocked(mask, x + mask.offI + BORDER, y + mask.offJ + BORDER)
-              if (skip > 0) {
-                skipTo = x + skip
-                continue
-              }
-              if (best) {
-                best.score = score
-                best.r = r
-                best.x = x
-                best.y = y
-              } else best = { score, r, x, y }
-            }
-          }
-        }
-      }
-
-      const coarseOnly = exhausted()
-      scan(COARSE_STEP, false)
-      // Fine pass: exact optimum over 1 mm positions (the coarse best only prunes). Skipped once
-      // the budget is gone, unless the coarse grid found nowhere at all.
-      if (!coarseOnly || !best) scan(1, best !== null)
-
-      const chosen = best as Candidate | null
-      if (!chosen) {
-        fits = false
-        continue
-      }
-      const rot = item.rotations[chosen.r]
-      grid.add(rot.mask, chosen.x + rot.mask.offI + BORDER, chosen.y + rot.mask.offJ + BORDER)
-      gx0 = Math.min(gx0, chosen.x + rot.minU)
-      gx1 = Math.max(gx1, chosen.x + rot.maxU)
-      gy0 = Math.min(gy0, chosen.y + rot.minV)
-      gy1 = Math.max(gy1, chosen.y + rot.maxV)
-      placements[input.itemId].push({ x: chosen.x, y: chosen.y, rotDeg: rot.deg })
-    }
+  const ctx: PackContext = {
+    inputs,
+    items,
+    bed,
+    margin: cfg.bedMarginMm,
+    // grid cells around the bed, so grown masks never leave the grid
+    border: Math.ceil((tallGap + 2) / CELL) + 4,
+    workBudget: cfg.arrangeWorkBudget,
+    outOfTime: () => clock() - t0 > cfg.arrangeBudgetMs,
   }
-  return { fits, placements }
+  const centre = pack(ctx, 'centre')
+  if (centre.fits) return { fits: true, placements: centre.placements }
+  const corner = pack(ctx, 'corner')
+  const pick = corner.fits || corner.placed > centre.placed ? corner : centre
+  return { fits: pick.fits, placements: pick.placements }
 }

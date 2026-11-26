@@ -178,10 +178,44 @@ describe('footprintOf', () => {
 })
 
 describe('arrangePlate', () => {
-  it('packs at the exact gap: 15 mm boxes sit 20 mm apart', () => {
-    const inputs = [{ itemId: 'a', copies: 2, footprint: footprintOf(box(15, 15, 10)), height: 10 }]
+  it.each([15, 20, 17.5, 21])('packs at the exact gap: two %s mm boxes sit 5 mm apart', (w) => {
+    const inputs = [{ itemId: 'a', copies: 2, footprint: footprintOf(box(w, w, 10)), height: 10 }]
     const r = arrangePlate(inputs, bed)
-    expect(minPairDist(r, inputs)).toBeCloseTo(5, 6)
+    const d = minPairDist(r, inputs)
+    expect(d).toBeGreaterThanOrEqual(5 - 1e-6)
+    expect(d).toBeLessThanOrEqual(5.5 + 1e-6) // at most one 0.5 mm grid step of slack
+  })
+
+  it('keeps 8 mm around a tall copy from short neighbours too', () => {
+    const inputs = [
+      { itemId: 't', copies: 1, footprint: footprintOf(box(30, 30, 80)), height: 80 },
+      { itemId: 's', copies: 6, footprint: footprintOf(box(20, 20, 10)), height: 10 },
+    ]
+    const r = arrangePlate(inputs, bed)
+    expect(r.fits).toBe(true)
+    const hs = placedHulls(r, inputs)
+    const tall = hs.filter((h) => h.id === 't')
+    const short = hs.filter((h) => h.id === 's')
+    const tallToShort = Math.min(...short.map((s) => polyDist(tall[0].pts, s.pts)))
+    expect(tallToShort).toBeGreaterThanOrEqual(8 - 1e-6)
+    expect(tallToShort).toBeLessThanOrEqual(8.5 + 1e-6) // still packed tight against it
+    expectNoOverlap(r, inputs, 5)
+    expectInside(r, inputs, bed, 3)
+  })
+
+  // the most a 5 mm-gap square grid achieves on the 174 mm usable square
+  const gridMax = (w: number) => Math.floor((bed.x - 2 * 3 + 5) / (w + 5)) ** 2
+
+  it.each([
+    [20, gridMax(20)],
+    [15, gridMax(15)],
+  ])('packs %s mm boxes at least as densely as a grid (%s copies)', (w, n) => {
+    const inputs = [{ itemId: 'a', copies: n, footprint: footprintOf(box(w, w, 10)), height: 10 }]
+    const r = arrangePlate(inputs, bed)
+    expect(r.fits).toBe(true)
+    expect(r.placements.a).toHaveLength(n)
+    expectNoOverlap(r, inputs, 5)
+    expectInside(r, inputs, bed, 3)
   })
 
   it('rotates off-axis when only a diagonal fits, still valid', () => {
@@ -262,6 +296,19 @@ describe('arrangePlate', () => {
     expectNoOverlap(r, tenItemsThirtyCopies, 5)
     expectInside(r, tenItemsThirtyCopies, bed, 3)
     expect(r.fits).toBe(true)
+  })
+
+  it('the work budget, not the clock, decides how far the search goes', () => {
+    const cfg = { ...slicerConfig, arrangeWorkBudget: 20_000 }
+    let slow = 0
+    const a = arrangePlate(tenItemsThirtyCopies, bed, cfg) // real clock
+    const b = arrangePlate(tenItemsThirtyCopies, bed, cfg, () => (slow += 0.01)) // other clock, still in time
+    expect(b).toEqual(a)
+    // a spent budget coarsens the search: it is not the full-budget result, but it is still valid
+    expect(a).not.toEqual(arrangePlate(tenItemsThirtyCopies, bed))
+    expectNoOverlap(a, tenItemsThirtyCopies, 5)
+    expectInside(a, tenItemsThirtyCopies, bed, 3)
+    expect(a.fits).toBe(true)
   })
 
   it('fits ten items / thirty copies validly in under 1500 ms on the real clock', () => {
