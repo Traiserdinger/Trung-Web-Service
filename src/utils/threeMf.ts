@@ -1,5 +1,6 @@
-// 3MF reader. Worker-safe: no DOMParser, XML is scanned with a small tag
-// tokenizer. Every <build><item> becomes one ThreeMfObject whose positions are
+// 3MF reader. Worker-safe: no DOMParser, XML is scanned with a small linear
+// tag tokenizer (no backtracking regexes, so hostile input cannot hang it).
+// Every <build><item> becomes one ThreeMfObject whose positions are
 // non-indexed triangles in Z-up millimetres (same space as a raw STL).
 import { unzipSync } from 'fflate'
 
@@ -84,19 +85,103 @@ interface ParsedModel {
   items: BuildItem[]
 }
 
-const TAG_RE = /<(\/?)([A-Za-z_][\w:.-]*)((?:[^>"']|"[^"]*"|'[^']*')*?)(\/?)>/g
-const ATTR_RE = /([A-Za-z_][\w:.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g
+const isSpace = (c: string): boolean => c === ' ' || c === '\t' || c === '\n' || c === '\r'
 
+/** Linear attribute parser. Keys are local names (namespace prefix stripped). */
 function parseAttrs(src: string): Record<string, string> {
   const out: Record<string, string> = {}
-  ATTR_RE.lastIndex = 0
-  let m: RegExpExecArray | null
-  while ((m = ATTR_RE.exec(src))) {
-    const key = m[1]
-    const colon = key.lastIndexOf(':')
-    out[colon >= 0 ? key.slice(colon + 1) : key] = m[2] ?? m[3] ?? ''
+  const n = src.length
+  let i = 0
+  while (i < n) {
+    while (i < n && isSpace(src[i])) i++
+    const start = i
+    while (i < n && !isSpace(src[i]) && src[i] !== '=' && src[i] !== '"' && src[i] !== "'") i++
+    const key = src.slice(start, i)
+    while (i < n && isSpace(src[i])) i++
+    if (src[i] !== '=') {
+      if (i === start) i++
+      continue
+    }
+    i++
+    while (i < n && isSpace(src[i])) i++
+    const q = src[i]
+    if (q !== '"' && q !== "'") continue
+    const end = src.indexOf(q, i + 1)
+    if (end < 0) break
+    if (key) out[key.slice(key.lastIndexOf(':') + 1)] = src.slice(i + 1, end)
+    i = end + 1
   }
   return out
+}
+
+interface Tag {
+  closing: boolean
+  selfClosing: boolean
+  /** Local name (namespace prefix stripped). */
+  name: string
+  attrs: string
+}
+
+/**
+ * Linear single-pass tag scanner. Skips comments, CDATA, processing
+ * instructions and DOCTYPE; throws on unterminated or malformed markup.
+ */
+function scanTags(text: string, onTag: (t: Tag) => void): void {
+  const n = text.length
+  let pos = 0
+  for (;;) {
+    const lt = text.indexOf('<', pos)
+    if (lt < 0) return
+    if (text.startsWith('<!--', lt)) {
+      const e = text.indexOf('-->', lt + 4)
+      if (e < 0) throw new ThreeMfError(CORRUPT)
+      pos = e + 3
+      continue
+    }
+    if (text.startsWith('<![CDATA[', lt)) {
+      const e = text.indexOf(']]>', lt + 9)
+      if (e < 0) throw new ThreeMfError(CORRUPT)
+      pos = e + 3
+      continue
+    }
+    if (text[lt + 1] === '?' || text[lt + 1] === '!') {
+      const e = text.indexOf('>', lt + 2)
+      if (e < 0) throw new ThreeMfError(CORRUPT)
+      pos = e + 1
+      continue
+    }
+    let i = lt + 1
+    const closing = text[i] === '/'
+    if (closing) i++
+    const nameStart = i
+    while (i < n && !isSpace(text[i]) && text[i] !== '>' && text[i] !== '/' && text[i] !== '<') i++
+    const qname = text.slice(nameStart, i)
+    if (!qname) throw new ThreeMfError(CORRUPT)
+    const attrStart = i
+    let end = -1
+    while (i < n) {
+      const c = text[i]
+      if (c === '>') {
+        end = i
+        break
+      }
+      if (c === '<') throw new ThreeMfError(CORRUPT)
+      if (c === '"' || c === "'") {
+        const q = text.indexOf(c, i + 1)
+        if (q < 0) throw new ThreeMfError(CORRUPT)
+        i = q + 1
+      } else i++
+    }
+    if (end < 0) throw new ThreeMfError(CORRUPT)
+    const selfClosing = end - 1 >= attrStart && text[end - 1] === '/'
+    onTag({
+      closing,
+      selfClosing,
+      name: qname.slice(qname.lastIndexOf(':') + 1),
+      attrs: text.slice(attrStart, selfClosing ? end - 1 : end),
+    })
+    pos = end + 1
+  }
 }
 
 function decodeEntities(s: string): string {
@@ -111,44 +196,38 @@ function decodeEntities(s: string): string {
 }
 
 function parseModel(xml: string, limits: ThreeMfLimits): ParsedModel {
-  const text = xml.replace(/<!--[\s\S]*?-->/g, '').replace(/<!\[CDATA\[[\s\S]*?\]\]>/g, '')
   const model: ParsedModel = { objects: new Map(), items: [] }
   let current: ModelObject | null = null
   let triangleCount = 0
-  TAG_RE.lastIndex = 0
-  let m: RegExpExecArray | null
-  while ((m = TAG_RE.exec(text))) {
-    const closing = m[1] === '/'
-    const tag = m[2].slice(m[2].lastIndexOf(':') + 1)
-    if (closing) {
-      if (tag === 'object') current = null
-      continue
+  let vertexCount = 0
+  scanTags(xml, (t) => {
+    if (t.closing) {
+      if (t.name === 'object') current = null
+      return
     }
-    switch (tag) {
+    const a = parseAttrs(t.attrs)
+    switch (t.name) {
       case 'model':
-        model.unit = parseAttrs(m[3]).unit
+        model.unit = a.unit
         break
-      case 'object': {
-        const a = parseAttrs(m[3])
+      case 'object':
         if (a.id === undefined) throw new ThreeMfError(CORRUPT)
         current = { name: a.name ? decodeEntities(a.name) : undefined, vertices: [], triangles: [], components: [] }
         model.objects.set(a.id, current)
-        if (m[4] === '/') current = null
+        if (t.selfClosing) current = null
         break
-      }
       case 'vertex': {
         if (!current) break
-        const a = parseAttrs(m[3])
         const x = Number(a.x)
         const y = Number(a.y)
         const z = Number(a.z)
         if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) throw new ThreeMfError(CORRUPT)
+        if (++vertexCount > limits.maxTriangles * 3) throw new ThreeMfError(TOO_HEAVY)
         current.vertices.push(x, y, z)
         break
       }
       case 'triangle': {
         if (!current) break
-        const a = parseAttrs(m[3])
         const v1 = Number(a.v1)
         const v2 = Number(a.v2)
         const v3 = Number(a.v3)
@@ -157,21 +236,17 @@ function parseModel(xml: string, limits: ThreeMfLimits): ParsedModel {
         current.triangles.push(v1, v2, v3)
         break
       }
-      case 'component': {
+      case 'component':
         if (!current) break
-        const a = parseAttrs(m[3])
         if (a.objectid === undefined) throw new ThreeMfError(CORRUPT)
         current.components.push({ objectid: a.objectid, path: a.path, transform: parseTransform(a.transform) })
         break
-      }
-      case 'item': {
-        const a = parseAttrs(m[3])
+      case 'item':
         if (a.objectid === undefined) throw new ThreeMfError(CORRUPT)
         model.items.push({ objectid: a.objectid, path: a.path, transform: parseTransform(a.transform) })
         break
-      }
     }
-  }
+  })
   return model
 }
 
@@ -182,18 +257,16 @@ function normalizePath(p: string): string {
 function findRootModelPath(files: Record<string, Uint8Array>): string {
   const rels = files['_rels/.rels']
   if (rels) {
-    const text = new TextDecoder().decode(rels)
-    TAG_RE.lastIndex = 0
-    let m: RegExpExecArray | null
-    while ((m = TAG_RE.exec(text))) {
-      if (m[2].endsWith('Relationship') && m[1] !== '/') {
-        const a = parseAttrs(m[3])
-        if (a.Target && /3dmodel$/i.test(a.Type ?? '')) {
-          const p = normalizePath(decodeEntities(a.Target))
-          if (files[p]) return p
-        }
+    let found: string | undefined
+    scanTags(new TextDecoder().decode(rels), (t) => {
+      if (found || t.closing || t.name !== 'Relationship') return
+      const a = parseAttrs(t.attrs)
+      if (a.Target && /3dmodel$/i.test(a.Type ?? '')) {
+        const p = normalizePath(decodeEntities(a.Target))
+        if (files[p]) found = p
       }
-    }
+    })
+    if (found) return found
   }
   return '3D/3dmodel.model'
 }
@@ -216,6 +289,10 @@ function parse(buffer: ArrayBuffer, limits: ThreeMfLimits): ThreeMfObject[] {
       return /\.(model|rels)$/i.test(file.name)
     },
   })
+  // Headers can under-declare sizes; re-check what was actually inflated.
+  let actual = 0
+  for (const f of Object.values(files)) actual += f.length
+  if (actual > limits.maxUnzippedBytes) throw new ThreeMfError(TOO_HEAVY)
 
   const rootPath = findRootModelPath(files)
   if (!files[rootPath]) throw new ThreeMfError(CORRUPT)
@@ -238,34 +315,38 @@ function parse(buffer: ArrayBuffer, limits: ThreeMfLimits): ThreeMfObject[] {
   const rootUnit = root.unit
   const scaleOf = (model: ParsedModel): number => UNIT_MM[model.unit ?? rootUnit ?? 'millimeter'] ?? 1
 
-  // Pass 1: gather the transformed leaf meshes of every item and count triangles.
   interface Leaf {
     obj: ModelObject
     matrix: Matrix
     scale: number
   }
-  const collect = (
-    modelPath: string,
-    objectid: string,
-    matrix: Matrix,
-    depth: number,
-    out: Leaf[],
-  ) => {
+  // Budgets bound the work even for hostile component graphs (fan-out, cycles).
+  const budget = { triangles: 0, visits: 0 }
+  const inProgress = new Set<string>()
+  const collect = (modelPath: string, objectid: string, matrix: Matrix, depth: number, out: Leaf[]) => {
     if (depth > MAX_DEPTH) throw new ThreeMfError(CORRUPT)
+    if (++budget.visits > limits.maxTriangles) throw new ThreeMfError(TOO_HEAVY)
     const model = load(modelPath)
     const obj = model.objects.get(objectid)
     if (!obj) throw new ThreeMfError(CORRUPT)
-    if (obj.triangles.length > 0) out.push({ obj, matrix, scale: scaleOf(model) })
+    const key = `${modelPath}\n${objectid}`
+    if (inProgress.has(key)) throw new ThreeMfError(CORRUPT)
+    if (obj.triangles.length > 0) {
+      budget.triangles += obj.triangles.length / 3
+      if (budget.triangles > limits.maxTriangles) throw new ThreeMfError(TOO_HEAVY)
+      out.push({ obj, matrix, scale: scaleOf(model) })
+    }
+    inProgress.add(key)
     for (const c of obj.components) {
       const childPath = c.path ? normalizePath(c.path) : modelPath
       collect(childPath, c.objectid, compose(c.transform, matrix), depth + 1, out)
     }
+    inProgress.delete(key)
   }
 
   const results: ThreeMfObject[] = []
   const nameOf = (modelPath: string, objectid: string, index: number): string =>
     load(modelPath).objects.get(objectid)?.name || `#${index + 1}`
-  let emitted = 0
 
   root.items.forEach((item, index) => {
     const modelPath = item.path ? normalizePath(item.path) : rootPath
@@ -273,8 +354,6 @@ function parse(buffer: ArrayBuffer, limits: ThreeMfLimits): ThreeMfObject[] {
     collect(modelPath, item.objectid, item.transform, 0, leaves)
     let tris = 0
     for (const l of leaves) tris += l.obj.triangles.length / 3
-    emitted += tris
-    if (emitted > limits.maxTriangles) throw new ThreeMfError(TOO_HEAVY)
     if (tris === 0) throw new ThreeMfError(CORRUPT)
 
     const positions = new Float32Array(tris * 9)

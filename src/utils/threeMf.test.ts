@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { strToU8, zipSync } from 'fflate'
-import { make3mf, modelXml } from '../../tests/fixtures/threeMf'
+import { strToU8, unzipSync, zipSync } from 'fflate'
+import { make3mf, modelXml, type FixtureObject } from '../../tests/fixtures/threeMf'
 import { makeBox } from '../../tests/fixtures/meshes'
 import { parse3mf, ThreeMfError } from './threeMf'
 
@@ -128,5 +128,107 @@ describe('parse3mf', () => {
       '3D/3dmodel.model': strToU8(modelXml({ objects: [{ id: 1, mesh: makeBox(2, 2, 2) }], build: [{ objectid: 1 }] })),
     })
     expect(parse3mf(toBuffer(z))).toHaveLength(1)
+  })
+
+  it('does not hang on unterminated tags (linear scanner)', () => {
+    for (const payload of ['<a '.repeat(70_000), '<!--'.repeat(70_000), '<a b="'.repeat(70_000)]) {
+      const z = zipSync({ '3D/3dmodel.model': strToU8(payload) })
+      const t0 = performance.now()
+      expect(() => parse3mf(toBuffer(z))).toThrow(CORRUPT)
+      expect(performance.now() - t0).toBeLessThan(500)
+    }
+  })
+
+  it('does not hang on a very long attribute name', () => {
+    const xml = '<model><resources><object id="1" ' + 'a'.repeat(300_000) + '/></resources><build/></model>'
+    const z = zipSync({ '3D/3dmodel.model': strToU8(xml) })
+    const t0 = performance.now()
+    expect(() => parse3mf(toBuffer(z))).toThrow(ThreeMfError)
+    expect(performance.now() - t0).toBeLessThan(500)
+  })
+
+  it('bounds exponential component fan-out', () => {
+    const objects: FixtureObject[] = []
+    for (let k = 1; k <= 16; k++)
+      objects.push({ id: k, components: Array.from({ length: 10 }, () => ({ objectid: k + 1 })) })
+    objects.push({ id: 17, mesh: makeBox(1, 1, 1) })
+    const buf = make3mf({ objects, build: [{ objectid: 1 }] })
+    const t0 = performance.now()
+    expect(() => parse3mf(buf, { maxUnzippedBytes: 1e9, maxTriangles: 20_000 })).toThrow(HEAVY)
+    expect(performance.now() - t0).toBeLessThan(500)
+  })
+
+  it('rejects a component cycle', () => {
+    const buf = make3mf({
+      objects: [
+        { id: 1, components: [{ objectid: 2 }] },
+        { id: 2, components: [{ objectid: 1 }] },
+      ],
+      build: [{ objectid: 1 }],
+    })
+    expect(() => parse3mf(buf)).toThrow(CORRUPT)
+    const self = make3mf({ objects: [{ id: 1, components: [{ objectid: 1 }] }], build: [{ objectid: 1 }] })
+    expect(() => parse3mf(self)).toThrow(CORRUPT)
+  })
+
+  it('composes nested component transforms', () => {
+    const buf = make3mf({
+      objects: [
+        { id: 1, mesh: makeBox(1, 1, 1) },
+        { id: 2, components: [{ objectid: 1, transform: '1 0 0 0 1 0 0 0 1 10 0 0' }] },
+        { id: 3, components: [{ objectid: 2, transform: '1 0 0 0 1 0 0 0 1 0 20 0' }] },
+      ],
+      build: [{ objectid: 3, transform: '1 0 0 0 1 0 0 0 1 0 0 30' }],
+    })
+    const b = bbox(parse3mf(buf)[0].positions)
+    expect(b.min).toEqual([10, 20, 30])
+    expect(b.max).toEqual([11, 21, 31])
+  })
+
+  it('rejects malformed numbers', () => {
+    const bad = make3mf({
+      objects: [{ id: 1, mesh: makeBox(1, 1, 1) }],
+      build: [{ objectid: 1, transform: '1 0 0 0 1 0 0 0 1 NaN 0 0' }],
+    })
+    expect(() => parse3mf(bad)).toThrow(CORRUPT)
+    const xml = modelXml({ objects: [{ id: 1, mesh: makeBox(1, 1, 1) }], build: [{ objectid: 1 }] }).replace(
+      /x="[^"]*"/,
+      'x="abc"',
+    )
+    const z = zipSync({ '3D/3dmodel.model': strToU8(xml) })
+    expect(() => parse3mf(toBuffer(z))).toThrow(CORRUPT)
+  })
+
+  it('supports p:path on a build item', () => {
+    const buf = make3mf({
+      objects: [],
+      build: [],
+      extraModels: {
+        '3D/Objects/o.model': modelXml({ objects: [{ id: 5, name: 'Far', mesh: makeBox(2, 2, 2) }] }),
+      },
+    })
+    // Patch the root model so its build item points at the external file.
+    const files = unzipSync(new Uint8Array(buf))
+    files['3D/3dmodel.model'] = strToU8(
+      modelXml({ objects: [] }).replace(
+        '<build/>',
+        '<build><item p:path="/3D/Objects/o.model" objectid="5"/></build>',
+      ),
+    )
+    const out = parse3mf(toBuffer(zipSync(files)))
+    expect(out).toHaveLength(1)
+    expect(out[0].name).toBe('Far')
+  })
+
+  it('catches a zip whose header under-declares the size', () => {
+    const big = modelXml({ objects: [{ id: 1, mesh: makeBox(1, 1, 1) }], build: [{ objectid: 1 }] }) + ' '.repeat(200_000)
+    const z = zipSync({ '3D/3dmodel.model': strToU8(big) })
+    const dv = new DataView(z.buffer, z.byteOffset, z.byteLength)
+    for (let i = 0; i + 30 < z.length; i++) {
+      const sig = dv.getUint32(i, true)
+      if (sig === 0x04034b50) dv.setUint32(i + 22, 100, true)
+      if (sig === 0x02014b50) dv.setUint32(i + 24, 100, true)
+    }
+    expect(() => parse3mf(toBuffer(z), { maxUnzippedBytes: 50_000, maxTriangles: 1000 })).toThrow(ThreeMfError)
   })
 })
