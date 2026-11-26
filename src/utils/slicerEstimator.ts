@@ -23,6 +23,9 @@ export type ItemSettings = Pick<PrintSettings, 'infillPercent' | 'wallLoops' | '
 
 export interface PartEstimate {
   baseVolume: number
+  /** mm³ cho 1 bản */
+  shellVolume: number
+  infillVolume: number
   /** mm³ cho 1 bản, đã gồm support */
   partVolume: number
   /** giây cho 1 bản */
@@ -64,7 +67,7 @@ export function estimatePart(stats: MeshStats, s: PrintSettings, cfg: SlicerConf
   const flow = material.flowRate[s.layerHeight]
   // Thời gian tính từ thể tích chưa nhân support, rồi nhân support đúng một lần.
   const partTimeSec = (baseVolume / flow + layers * cfg.perLayerSec) * supportMul
-  return { baseVolume, partVolume, partTimeSec, layers }
+  return { baseVolume, shellVolume, infillVolume, partVolume, partTimeSec, layers }
 }
 
 export function estimatePrint(
@@ -75,11 +78,7 @@ export function estimatePrint(
   platesOverride?: number,
 ): PrintEstimate {
   const material = materials[s.material]
-  const { partVolume, partTimeSec, layers } = estimatePart(stats, s, cfg)
-
-  const tShell = s.wallLoops * cfg.lineWidth + cfg.shellExtra
-  const shellVolume = Math.min(stats.volume, stats.surfaceArea * tShell)
-  const infillVolume = Math.max(0, stats.volume - shellVolume) * (s.infillPercent / 100)
+  const { shellVolume, infillVolume, partVolume, partTimeSec, layers } = estimatePart(stats, s, cfg)
 
   // Xếp lưới thật trên bàn (số hàng × số cột vừa khổ), không chia theo diện tích:
   // hai chi tiết 100×100 không thể nằm chung bàn 180×180 dù tổng diện tích nhỏ hơn.
@@ -122,10 +121,8 @@ export function estimatePlate(
     time += q * part.partTimeSec
     copies += q
     layers = Math.max(layers, part.layers)
-    const tShell = s.wallLoops * cfg.lineWidth + cfg.shellExtra
-    const sh = Math.min(it.stats.volume, it.stats.surfaceArea * tShell)
-    shell += q * sh
-    infill += q * Math.max(0, it.stats.volume - sh) * (s.infillPercent / 100)
+    shell += q * part.shellVolume
+    infill += q * part.infillVolume
   }
   return {
     grams: (volume / 1000) * material.density + cfg.purgeGrams,
