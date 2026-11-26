@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { forwardRef } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MeshStats } from '../../utils/meshAnalysis'
-import type { OrderPayload } from '../../utils/orderPayload'
+import type { OrderMeta } from '../../utils/orderPayload'
 
 const h = vi.hoisted(() => ({ parse: vi.fn(), submit: vi.fn() }))
 vi.mock('./StlViewer', () => ({ StlViewer: forwardRef(() => null) }))
@@ -101,7 +101,7 @@ describe('Quote3DCalculator', () => {
 
   it('shows the code that was actually sent when a newer file finishes loading mid-send', async () => {
     const parseB = deferred<ReturnType<typeof parsed>>()
-    const send = deferred<{ orderCode: string }>()
+    const send = deferred<{ orderCode: string; trackUrl: string; preview: boolean; files: { fileNo: number; uploaded: boolean }[] }>()
     h.parse.mockResolvedValueOnce(parsed(30)).mockReturnValueOnce(parseB.promise)
     h.submit.mockImplementation(() => send.promise)
     const { container } = render(<Quote3DCalculator />)
@@ -113,14 +113,14 @@ describe('Quote3DCalculator', () => {
     await waitFor(() => expect(h.submit).toHaveBeenCalledTimes(1))
     parseB.resolve(parsed(40))
     await screen.findByText('b.stl')
-    const sent = h.submit.mock.calls[0][0] as OrderPayload
-    send.resolve({ orderCode: sent.orderCode })
+    const sent = h.submit.mock.calls[0][0] as OrderMeta
+    send.resolve({ orderCode: sent.orderCode, trackUrl: '', preview: false, files: [{ fileNo: 1, uploaded: true }] })
     expect(await screen.findByRole('status')).toHaveTextContent(sent.orderCode)
-    expect(sent.fileName).toBe('a.stl')
+    expect(sent.files[0].fileName).toBe('a.stl')
   })
 
   it('locks the options while sending so the screen matches the order', async () => {
-    const send = deferred<{ orderCode: string }>()
+    const send = deferred<{ orderCode: string; trackUrl: string; preview: boolean; files: { fileNo: number; uploaded: boolean }[] }>()
     h.parse.mockResolvedValue(parsed(30))
     h.submit.mockImplementation(() => send.promise)
     const { container } = render(<Quote3DCalculator />)
@@ -133,7 +133,7 @@ describe('Quote3DCalculator', () => {
 
   it('starts a new order (new code) after a successful send', async () => {
     h.parse.mockResolvedValue(parsed(30))
-    h.submit.mockImplementation(async (p: OrderPayload) => ({ orderCode: p.orderCode }))
+    h.submit.mockImplementation(async (p: OrderMeta) => ({ orderCode: p.orderCode, trackUrl: '', preview: false, files: [{ fileNo: 1, uploaded: true }] }))
     const { container } = render(<Quote3DCalculator />)
     pick(container, stl('a.stl'))
     await userEvent.click(await screen.findByRole('button', { name: 'Gửi yêu cầu in' }))
@@ -144,16 +144,16 @@ describe('Quote3DCalculator', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Gửi yêu cầu in' }))
     await fillAndSend()
     await waitFor(() => expect(h.submit).toHaveBeenCalledTimes(2))
-    const [first, second] = h.submit.mock.calls.map((c) => c[0] as OrderPayload)
+    const [first, second] = h.submit.mock.calls.map((c) => c[0] as OrderMeta)
     expect(second.orderCode).not.toBe(first.orderCode)
-    expect(second.settings.material).toBe('PLA')
+    expect(second.shared.material).toBe('PLA')
   })
 
   it('records the inch rescale factor in the order', async () => {
     h.parse
       .mockResolvedValueOnce({ positions: new Float32Array(9), stats: stats(2) })
       .mockResolvedValueOnce({ positions: new Float32Array(9), stats: stats(50.8) })
-    h.submit.mockImplementation(async (p: OrderPayload) => ({ orderCode: p.orderCode }))
+    h.submit.mockImplementation(async (p: OrderMeta) => ({ orderCode: p.orderCode, trackUrl: '', preview: false, files: [{ fileNo: 1, uploaded: true }] }))
     const { container } = render(<Quote3DCalculator />)
     pick(container, stl('inch.stl'))
     await userEvent.click(await screen.findByRole('button', { name: 'Đổi sang mm' }))
@@ -161,6 +161,6 @@ describe('Quote3DCalculator', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Gửi yêu cầu in' }))
     await fillAndSend()
     await waitFor(() => expect(h.submit).toHaveBeenCalled())
-    expect((h.submit.mock.calls[0][0] as OrderPayload).scale).toBe(25.4)
+    expect((h.submit.mock.calls[0][0] as OrderMeta).items[0].scale).toBe(25.4)
   })
 })

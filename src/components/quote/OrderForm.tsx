@@ -2,10 +2,10 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { contactConfig } from '../../config/contactConfig'
 import type { ColorOption } from '../../config/colorConfig'
 import { fileLimits } from '../../config/pricingConfig'
-import { fileToBase64, OrderSubmitError, submitOrder as defaultSubmit } from '../../lib/submitOrder'
+import { OrderSubmitError, submitOrder as defaultSubmit } from '../../lib/submitOrder'
 import type { MeshStats } from '../../utils/meshAnalysis'
 import {
-  buildOrderPayload,
+  buildOrderMeta,
   canUpload,
   validateCustomer,
   type CustomerErrors,
@@ -80,11 +80,6 @@ function ZaloButton({ children, light }: { children: ReactNode; light?: boolean 
   )
 }
 
-/** Base64 từ bộ nhớ nếu có, nếu không thì đọc file (có thể lỗi nếu file đã bị xoá/di chuyển) */
-async function encodeFile(file: File, buffer?: ArrayBuffer): Promise<string> {
-  return fileToBase64(buffer ? new Blob([buffer]) : file)
-}
-
 export function OrderForm({
   quote,
   stats,
@@ -150,33 +145,48 @@ export function OrderForm({
     setStage('reading')
     setSendError(null)
     try {
-      let fileBase64 = ''
-      if (!tooBig) {
-        try {
-          fileBase64 = await encodeFile(file, fileBuffer)
-        } catch {
-          throw new OrderSubmitError(
-            `Không đọc được file ${file.name} trên máy. Hãy chọn lại file rồi gửi, hoặc gửi file qua Zalo.`,
-          )
-        }
-      }
-      const payload = buildOrderPayload({
+      const meta = buildOrderMeta({
         orderCode,
-        quote,
-        stats,
-        settings,
+        quote: { ...quote, separateTotal: null, savings: null, fitsOnePlate: true },
+        shared: { material: settings.material, layerHeight: settings.layerHeight },
         customer,
         colorId: color.id,
-        fileName: file.name,
-        fileSize: file.size,
-        fileBase64,
-        fileDelivery: tooBig ? 'zalo' : 'upload',
-        scale,
+        files: [
+          {
+            fileNo: 1,
+            role: 'source',
+            fileName: file.name,
+            fileSize: file.size,
+            fileType: 'stl',
+            fileDelivery: tooBig ? 'zalo' : 'upload',
+          },
+        ],
+        items: [
+          {
+            itemNo: 1,
+            fileNo: 1,
+            name: file.name,
+            dims: stats.dims,
+            volume: stats.volume,
+            surfaceArea: stats.surfaceArea,
+            scale,
+            orient: 'auto',
+            infillPercent: settings.infillPercent,
+            wallLoops: settings.wallLoops,
+            support: settings.support,
+            quantity: settings.quantity,
+            placements: null,
+            footprint: null,
+          },
+        ],
         turnstileToken,
       })
+      // Đọc từ bộ nhớ nếu có; file lớn quá 35 MB không tải lên (khách gửi qua Zalo)
+      const blobs = new Map<number, Blob>()
+      if (!tooBig) blobs.set(1, fileBuffer ? new Blob([fileBuffer]) : file)
       setStage('sending')
-      const r = await submit(payload, { url: contactConfig.appsScriptUrl })
-      setDone({ trackUrl: r.trackUrl, fileUploaded: r.fileUploaded, preview: r.preview === true })
+      const r = await submit(meta, blobs, { url: contactConfig.appsScriptUrl })
+      setDone({ trackUrl: r.trackUrl, fileUploaded: r.files.length > 0 && r.files.every((f) => f.uploaded), preview: r.preview === true })
       onSent?.()
     } catch (e) {
       setSendError(e instanceof OrderSubmitError ? e.message : 'Không gửi được, kiểm tra mạng và thử lại')

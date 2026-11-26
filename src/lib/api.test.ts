@@ -1,17 +1,17 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createOrder, trackOrder } from './api'
 import { OrderSubmitError } from './submitOrder'
-import type { LegacyOrderMeta } from '../utils/orderPayload'
+import type { OrderMeta } from '../utils/orderPayload'
 
-const meta = { orderCode: 'P3D-261120-AAAA', colorId: 3 } as LegacyOrderMeta
+const meta = { orderCode: 'P3D-261120-AAAA', colorId: 3 } as OrderMeta
 const reply = (body: unknown) => vi.fn(async () => new Response(JSON.stringify(body)))
 
 describe('createOrder', () => {
   it('POSTs JSON to /api/orders and returns the server fields', async () => {
-    const fetchFn = reply({ ok: true, orderCode: 'P3D-261120-AAAA', uploadTicket: 't', trackUrl: 'https://x/tra-cuu?ma=P3D-261120-AAAA', preview: false, fileStatus: 'pending' })
+    const fetchFn = reply({ ok: true, orderCode: 'P3D-261120-AAAA', uploads: [{ fileNo: 1, ticket: 't' }, { fileNo: 0, ticket: 'p' }], trackUrl: 'https://x/tra-cuu?ma=P3D-261120-AAAA', preview: false, fileStatus: 'pending' })
     await expect(createOrder(meta, fetchFn as unknown as typeof fetch)).resolves.toEqual({
       orderCode: 'P3D-261120-AAAA',
-      uploadTicket: 't',
+      uploads: [{ fileNo: 1, ticket: 't' }, { fileNo: 0, ticket: 'p' }],
       trackUrl: 'https://x/tra-cuu?ma=P3D-261120-AAAA',
       preview: false,
       fileStatus: 'pending',

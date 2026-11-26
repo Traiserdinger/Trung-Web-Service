@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { OrderSubmitError } from '../../lib/submitOrder'
 import type { MeshStats } from '../../utils/meshAnalysis'
-import type { OrderPayload } from '../../utils/orderPayload'
+import type { OrderMeta } from '../../utils/orderPayload'
 import type { QuoteState } from '../../utils/quoteState'
 import type { PrintSettings } from '../../utils/slicerEstimator'
 import { DEFAULT_COLORS } from '../../config/colorConfig'
@@ -67,7 +67,7 @@ describe('OrderForm', () => {
   })
 
   it('sends only once when the button is clicked twice', async () => {
-    const submit = vi.fn(() => new Promise<{ orderCode: string; trackUrl: string; fileUploaded: boolean }>(() => {}))
+    const submit = vi.fn(() => new Promise<{ orderCode: string; trackUrl: string; files: { fileNo: number; uploaded: boolean }[] }>(() => {}))
     setup(submit)
     await fillValid()
     const button = screen.getByRole('button', { name: 'Gửi đơn' })
@@ -82,7 +82,7 @@ describe('OrderForm', () => {
     const submit = vi
       .fn()
       .mockRejectedValueOnce(new OrderSubmitError('Không gửi được, kiểm tra mạng và thử lại'))
-      .mockImplementationOnce(async (p: OrderPayload) => ({ orderCode: p.orderCode, trackUrl: '/tra-cuu?ma=' + p.orderCode, fileUploaded: true }))
+      .mockImplementationOnce(async (p: OrderMeta) => ({ orderCode: p.orderCode, trackUrl: '/tra-cuu?ma=' + p.orderCode, files: [{ fileNo: 1, uploaded: true }] }))
     setup(submit)
     await fillValid()
     await userEvent.click(screen.getByRole('button', { name: 'Gửi đơn' }))
@@ -90,12 +90,12 @@ describe('OrderForm', () => {
     expect(screen.getByLabelText(/Họ tên/)).toHaveValue('An')
     await userEvent.click(screen.getByRole('button', { name: 'Gửi đơn' }))
     expect(await screen.findByText(/Nhắn mã này để chốt đơn/)).toBeInTheDocument()
-    const codes = submit.mock.calls.map((c) => (c[0] as OrderPayload).orderCode)
+    const codes = submit.mock.calls.map((c) => (c[0] as OrderMeta).orderCode)
     expect(codes).toEqual([CODE, CODE])
   })
 
   it('records an order without the file when it is over 35 MB, for a Zalo hand-off', async () => {
-    const submit = vi.fn(async (p: OrderPayload) => ({ orderCode: p.orderCode, trackUrl: '/tra-cuu?ma=' + p.orderCode, fileUploaded: true }))
+    const submit = vi.fn(async (p: OrderMeta, _blobs: Map<number, Blob>) => ({ orderCode: p.orderCode, trackUrl: '/tra-cuu?ma=' + p.orderCode, files: [{ fileNo: 1, uploaded: true }] }))
     const big = file()
     Object.defineProperty(big, 'size', { value: 36 * 1024 * 1024 })
     setup(submit, big)
@@ -103,12 +103,13 @@ describe('OrderForm', () => {
     await fillValid()
     await userEvent.click(screen.getByRole('button', { name: 'Gửi đơn' }))
     await waitFor(() => expect(submit).toHaveBeenCalledTimes(1))
-    const p = submit.mock.calls[0][0] as OrderPayload
-    expect(p).toMatchObject({ fileDelivery: 'zalo', fileBase64: '', orderCode: CODE })
+    const p = submit.mock.calls[0][0] as OrderMeta
+    expect(p).toMatchObject({ orderCode: CODE, files: [{ fileNo: 1, fileDelivery: 'zalo' }] })
+    expect(submit.mock.calls[0][1].size).toBe(0)
   })
 
   it('announces success in a focused status panel showing the sent code', async () => {
-    setup(vi.fn(async (p: OrderPayload) => ({ orderCode: p.orderCode, trackUrl: '/tra-cuu?ma=' + p.orderCode, fileUploaded: true })))
+    setup(vi.fn(async (p: OrderMeta) => ({ orderCode: p.orderCode, trackUrl: '/tra-cuu?ma=' + p.orderCode, files: [{ fileNo: 1, uploaded: true }] })))
     await fillValid()
     await userEvent.click(screen.getByRole('button', { name: 'Gửi đơn' }))
     const status = await screen.findByRole('status')
@@ -124,25 +125,9 @@ describe('OrderForm', () => {
     expect(name).toHaveAccessibleDescription('Vui lòng nhập họ tên')
   })
 
-  it('blames the local file, not the network, when the file cannot be read', async () => {
-    const submit = vi.fn()
-    const unreadable = file()
-    Object.defineProperty(unreadable, 'size', { value: 10 })
-    vi.spyOn(FileReader.prototype, 'readAsDataURL').mockImplementation(function (this: FileReader) {
-      queueMicrotask(() => this.onerror?.(new ProgressEvent('error') as ProgressEvent<FileReader>))
-    })
-    setup(submit, unreadable)
-    await fillValid()
-    await userEvent.click(screen.getByRole('button', { name: 'Gửi đơn' }))
-    const alert = await screen.findByRole('alert')
-    expect(submit).not.toHaveBeenCalled()
-    expect(alert).toHaveTextContent(/Không đọc được file/)
-    vi.restoreAllMocks()
-  })
-
   it('locks the close button and reports busy while sending', async () => {
     const onBusyChange = vi.fn()
-    const submit = vi.fn(() => new Promise<{ orderCode: string; trackUrl: string; fileUploaded: boolean }>(() => {}))
+    const submit = vi.fn(() => new Promise<{ orderCode: string; trackUrl: string; files: { fileNo: number; uploaded: boolean }[] }>(() => {}))
     setup(submit, file(), { onBusyChange })
     await fillValid()
     await userEvent.click(screen.getByRole('button', { name: 'Gửi đơn' }))
@@ -168,7 +153,7 @@ describe('OrderForm', () => {
       const submit = vi
         .fn()
         .mockRejectedValueOnce(new OrderSubmitError('Quá nhiều đơn'))
-        .mockImplementationOnce(async (p: OrderPayload) => ({ orderCode: p.orderCode, trackUrl: '/tra-cuu?ma=' + p.orderCode, fileUploaded: true }))
+        .mockImplementationOnce(async (p: OrderMeta) => ({ orderCode: p.orderCode, trackUrl: '/tra-cuu?ma=' + p.orderCode, files: [{ fileNo: 1, uploaded: true }] }))
       setup(submit, file(), { turnstileSiteKey: 'site-key' })
       await fillValid()
       await userEvent.click(screen.getByRole('button', { name: 'Gửi đơn' }))
@@ -176,7 +161,7 @@ describe('OrderForm', () => {
       expect(reset).toHaveBeenCalledWith('w1')
       await userEvent.click(screen.getByRole('button', { name: 'Gửi đơn' }))
       await waitFor(() => expect(submit).toHaveBeenCalledTimes(2))
-      const tokens = submit.mock.calls.map((c) => (c[0] as OrderPayload).turnstileToken)
+      const tokens = submit.mock.calls.map((c) => (c[0] as OrderMeta).turnstileToken)
       expect(tokens).toEqual(['tok1', 'tok2'])
     } finally {
       delete window.turnstile
@@ -189,8 +174,8 @@ describe('OrderForm', () => {
     expect(screen.getByText('không bắt buộc · để nhận email báo tiến độ')).toBeInTheDocument()
   })
 
-  it('payload có colorId của màu đang chọn', async () => {
-    const submit = vi.fn(async (p: OrderPayload) => ({ orderCode: p.orderCode, trackUrl: '', fileUploaded: true }))
+  it('meta có colorId của màu đang chọn', async () => {
+    const submit = vi.fn(async (p: OrderMeta) => ({ orderCode: p.orderCode, trackUrl: '', files: [{ fileNo: 1, uploaded: true }] }))
     setup(submit)
     await fillValid()
     await userEvent.click(screen.getByRole('button', { name: 'Gửi đơn' }))
@@ -199,7 +184,7 @@ describe('OrderForm', () => {
   })
 
   it('màn hình xong có link theo dõi tiến độ', async () => {
-    setup(vi.fn(async (p: OrderPayload) => ({ orderCode: p.orderCode, trackUrl: `https://site.example/tra-cuu?ma=${p.orderCode}`, fileUploaded: true })))
+    setup(vi.fn(async (p: OrderMeta) => ({ orderCode: p.orderCode, trackUrl: `https://site.example/tra-cuu?ma=${p.orderCode}`, files: [{ fileNo: 1, uploaded: true }] })))
     await fillValid()
     await userEvent.click(screen.getByRole('button', { name: 'Gửi đơn' }))
     const link = await screen.findByRole('link', { name: 'Theo dõi tiến độ đơn' })
@@ -207,7 +192,7 @@ describe('OrderForm', () => {
   })
 
   it('trackUrl tương đối hoặc thiếu → link dự phòng', async () => {
-    setup(vi.fn(async (p: OrderPayload) => ({ orderCode: p.orderCode, trackUrl: '', fileUploaded: true })))
+    setup(vi.fn(async (p: OrderMeta) => ({ orderCode: p.orderCode, trackUrl: '', files: [{ fileNo: 1, uploaded: true }] })))
     await fillValid()
     await userEvent.click(screen.getByRole('button', { name: 'Gửi đơn' }))
     const link = await screen.findByRole('link', { name: 'Theo dõi tiến độ đơn' })
@@ -215,7 +200,7 @@ describe('OrderForm', () => {
   })
 
   it('preview → hiện "Đây là bản thử, không lưu file." và không có câu Zalo', async () => {
-    setup(vi.fn(async (p: OrderPayload) => ({ orderCode: p.orderCode, trackUrl: '', fileUploaded: false, preview: true })))
+    setup(vi.fn(async (p: OrderMeta) => ({ orderCode: p.orderCode, trackUrl: '', files: [{ fileNo: 1, uploaded: false }], preview: true })))
     await fillValid()
     await userEvent.click(screen.getByRole('button', { name: 'Gửi đơn' }))
     expect(await screen.findByText('Đây là bản thử, không lưu file.')).toBeInTheDocument()
@@ -223,7 +208,7 @@ describe('OrderForm', () => {
   })
 
   it('fileUploaded false → hiện câu gửi file qua Zalo', async () => {
-    setup(vi.fn(async (p: OrderPayload) => ({ orderCode: p.orderCode, trackUrl: '', fileUploaded: false })))
+    setup(vi.fn(async (p: OrderMeta) => ({ orderCode: p.orderCode, trackUrl: '', files: [{ fileNo: 1, uploaded: false }] })))
     await fillValid()
     await userEvent.click(screen.getByRole('button', { name: 'Gửi đơn' }))
     expect(await screen.findByText('Đơn đã được ghi nhận nhưng file chưa gửi được. Gửi file qua Zalo kèm mã này nhé.')).toBeInTheDocument()
