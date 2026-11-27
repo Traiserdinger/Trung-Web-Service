@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { OrderStatus } from '../shared/orderStatus.ts'
-import { deleteOrder, getOrder, setStatus, type OrderEvent, type OrderRow } from './adminApi.ts'
+import { deleteOrder, getOrder, setStatus, type OrderEvent, type OrderFileRow, type OrderItemRow, type OrderRow } from './adminApi.ts'
 import { DeleteDialog } from './DeleteDialog.tsx'
+import { PrintSheet } from './detail/PrintSheet.tsx'
 import { OrderFacts } from './detail/OrderFacts.tsx'
 import { StatusForm } from './detail/StatusForm.tsx'
 import { Timeline } from './detail/Timeline.tsx'
@@ -22,6 +23,8 @@ export function OrderDetail({ code }: { code: string }) {
 function OrderDetailBody({ code }: { code: string }) {
   const [order, setOrder] = useState<OrderRow | null>(null)
   const [events, setEvents] = useState<OrderEvent[]>([])
+  const [files, setFiles] = useState<OrderFileRow[]>([])
+  const [items, setItems] = useState<OrderItemRow[]>([])
   const [error, setError] = useState('')
   const fail = useFail(setError)
   const [deleting, setDeleting] = useState(false)
@@ -36,6 +39,8 @@ function OrderDetailBody({ code }: { code: string }) {
         if (!alive) return
         setOrder(d.order)
         setEvents(d.events)
+        setFiles(d.files ?? [])
+        setItems(d.items ?? [])
       })
       .catch((e: Error) => alive && fail(e))
     return () => {
@@ -111,7 +116,10 @@ function OrderDetailBody({ code }: { code: string }) {
             </p>
           )}
           <div className="grid gap-12 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] lg:gap-14">
-            <OrderFacts o={order} />
+            <div className="space-y-12">
+              {items.length > 0 && <PrintSheet order={order} files={files} items={items} />}
+              <OrderFacts o={order} />
+            </div>
             <div className="order-first space-y-8 lg:order-none">
               <Timeline events={events} />
               <StatusForm initial={order.status} onSubmit={save} />

@@ -1,5 +1,36 @@
 import type { OrderStatus } from '../shared/orderStatus.ts'
 
+// Khớp worker/shared/orderRepo.ts; placements/footprint là chuỗi JSON.
+export interface OrderFileRow {
+  orderCode: string
+  fileNo: number
+  role: 'source' | 'plate'
+  fileName: string
+  fileSize: number
+  fileType: 'stl' | '3mf'
+  fileDelivery: 'upload' | 'zalo'
+  fileStatus: 'pending' | 'saved' | 'zalo'
+  driveUrl: string | null
+}
+
+export interface OrderItemRow {
+  orderCode: string
+  itemNo: number
+  fileNo: number
+  name: string
+  dims: string
+  volume: number
+  surfaceArea: number
+  scale: number
+  orient: string | null
+  infillPercent: number
+  wallLoops: number
+  support: number
+  quantity: number
+  placements: string | null
+  footprint: string | null
+}
+
 export const SESSION_EXPIRED = 'Phiên đăng nhập hết hạn, vui lòng đăng nhập lại'
 
 export interface OrderListItem {
@@ -91,7 +122,7 @@ export async function listOrders(f: { status: string; q: string; page: number })
 }
 
 export const getOrder = (code: string) =>
-  call<{ order: OrderRow; events: OrderEvent[] }>(`/api/orders/${encodeURIComponent(code)}`)
+  call<{ order: OrderRow; events: OrderEvent[]; files: OrderFileRow[]; items: OrderItemRow[] }>(`/api/orders/${encodeURIComponent(code)}`)
 
 export const setStatus = (code: string, status: OrderStatus, note?: string) =>
   call<{ event: OrderEvent }>(`/api/orders/${encodeURIComponent(code)}/status`, {
