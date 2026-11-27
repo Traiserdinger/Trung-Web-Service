@@ -317,7 +317,7 @@ describe('OrderForm', () => {
     expect(fp[0]).toEqual([0, 0])
   })
 
-  it('skips plate when consult', async () => {
+  it('one-item consult uploads its source and skips the plate', async () => {
     const items = [plateItem(1)]
     const buildPlate = vi.fn(async () => bytesOf(10))
     const submit = vi.fn(async (p: OrderMeta, _b: Map<number, Blob>) => okResult(p))
@@ -328,8 +328,51 @@ describe('OrderForm', () => {
     expect(buildPlate).not.toHaveBeenCalled()
     const meta = submit.mock.calls[0][0]
     expect(meta.files).toHaveLength(1)
-    expect(meta.files[0].fileDelivery).toBe('zalo')
+    expect(meta.files[0].fileDelivery).toBe('upload')
+    expect([...submit.mock.calls[0][1].keys()]).toEqual([1])
+  })
+
+  it('two-item consult is all zalo with no blobs and no plate', async () => {
+    const items = [plateItem(1, 'a.stl'), plateItem(2, 'b.stl')]
+    const buildPlate = vi.fn(async () => bytesOf(10))
+    const submit = vi.fn(async (p: OrderMeta, _b: Map<number, Blob>) => okResult(p))
+    setup(submit, { quote: consultQuote, files: [plateFile(1, 'a.stl'), plateFile(2, 'b.stl')], items, arrangement: arrangedFor(items), buildPlate })
+    await fillValid()
+    await userEvent.click(screen.getByRole('button', { name: 'Gửi đơn' }))
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1))
+    expect(buildPlate).not.toHaveBeenCalled()
+    const meta = submit.mock.calls[0][0]
+    expect(meta.files.map((f) => f.fileDelivery)).toEqual(['zalo', 'zalo'])
     expect(submit.mock.calls[0][1].size).toBe(0)
+  })
+
+  it('sends null placements and no plate when the arrangement is stale for the quantity', async () => {
+    const items = [plateItem(1)]
+    items[0].settings.quantity = 3
+    const buildPlate = vi.fn(async () => bytesOf(10))
+    const submit = vi.fn(async (p: OrderMeta, _b: Map<number, Blob>) => okResult(p))
+    setup(submit, { items, arrangement: arrangedFor(items), buildPlate })
+    await fillValid()
+    await userEvent.click(screen.getByRole('button', { name: 'Gửi đơn' }))
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1))
+    expect(buildPlate).not.toHaveBeenCalled()
+    const meta = submit.mock.calls[0][0]
+    expect(meta.items[0].placements).toBeNull()
+    expect(meta.files.map((f) => f.fileNo)).toEqual([1])
+  })
+
+  it('a throwing recent-orders store does not turn a recorded order into an error', async () => {
+    const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('quota')
+    })
+    try {
+      setup(vi.fn(async (p: OrderMeta) => okResult(p)))
+      await fillValid()
+      await userEvent.click(screen.getByRole('button', { name: 'Gửi đơn' }))
+      expect(await screen.findByRole('status')).toHaveTextContent(CODE)
+    } finally {
+      spy.mockRestore()
+    }
   })
 
   it('continues without the plate when building fails or it is over 35 MiB, without mentioning it', async () => {

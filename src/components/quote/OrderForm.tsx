@@ -153,8 +153,8 @@ export function OrderForm({
 
   const totalBytes = files.reduce((n, f) => n + f.file.size, 0)
   const tooBig = totalBytes > fileLimits.uploadMaxBytes
-  /** Đơn tư vấn hoặc quá 35 MB: không tải file lên, khách gửi qua Zalo kèm mã */
-  const zalo = quote.orderType !== 'quote' || tooBig
+  /** Quá 35 MB, hoặc đơn tư vấn từ 2 món: không tải file lên, khách gửi qua Zalo kèm mã. Đơn tư vấn một món vẫn tải file. */
+  const zalo = tooBig || (quote.orderType !== 'quote' && items.length >= 2)
   const needsTurnstile = Boolean(turnstileSiteKey)
   const set = (patch: Partial<CustomerInfo>) => setCustomer((c) => ({ ...c, ...patch }))
 
@@ -173,7 +173,9 @@ export function OrderForm({
     try {
       // Bàn in: chỉ khi báo giá tự động và đã xếp vừa; lỗi hay quá 35 MB thì bỏ, không báo khách
       let plate: Uint8Array | null = null
-      if (quote.orderType === 'quote' && arrangement?.fits) {
+      // Số bản đã xếp phải khớp số lượng hiện tại; lệch (đang xếp lại) thì không dựng bàn in
+      const placementsFresh = items.every((it) => arrangement?.placements[it.id]?.length === it.settings.quantity)
+      if (quote.orderType === 'quote' && arrangement?.fits && placementsFresh) {
         try {
           const bytes = await buildPlate(
             items.map((it, i) => ({
@@ -225,7 +227,7 @@ export function OrderForm({
           wallLoops: it.settings.wallLoops,
           support: it.settings.support,
           quantity: it.settings.quantity,
-          placements: placed && placed.length > 0 ? placed : null,
+          placements: placed && placed.length === it.settings.quantity ? placed : null,
           footprint: hull && hull.length > 0 ? decimate(hull) : null,
         }
       })
@@ -250,7 +252,11 @@ export function OrderForm({
       const failed = metaFiles
         .filter((f) => f.role === 'source' && f.fileDelivery === 'upload' && !uploaded.has(f.fileNo))
         .map((f) => f.fileName)
-      saveRecentOrder({ code: orderCode, createdAt: meta.createdAt, summary: recentSummary(items.map((it) => it.name)) })
+      try {
+        saveRecentOrder({ code: orderCode, createdAt: meta.createdAt, summary: recentSummary(items.map((it) => it.name)) })
+      } catch {
+        /* ghi nhớ trên máy lỗi không được làm hỏng đơn đã gửi */
+      }
       setDone({ trackUrl: r.trackUrl, failed, preview: r.preview === true })
       onSent?.()
     } catch (e) {
