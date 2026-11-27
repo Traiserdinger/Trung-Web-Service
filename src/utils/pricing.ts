@@ -18,23 +18,43 @@ export function computeTimeFee(minutes: number, r: PricingRules = pricingRules):
 const ceilTo = (x: number, step: number) => Math.ceil(x / step - 1e-9) * step
 const roundTo = (x: number, step: number) => Math.round(x / step) * step
 
-export function priceQuote(
+function quote(
   e: Pick<PrintEstimate, 'grams' | 'timeSec'>,
   m: MaterialConfig,
-  r: PricingRules = pricingRules,
+  r: PricingRules,
+  minimum: number,
+  extraFee: number,
 ): PriceQuote | null {
   if (m.contactOnly || m.pricePerGram === null) return null
   const materialCost = e.grams * m.pricePerGram
   const minutes = Math.ceil(e.timeSec / 60)
   const timeFee = computeTimeFee(minutes, r)
-  const total = Math.max(r.minimumOrder, ceilTo((materialCost + timeFee) * r.safetyMargin, r.roundTo))
+  const total = Math.max(minimum, ceilTo((materialCost + timeFee) * r.safetyMargin + extraFee, r.roundTo))
   const spread = r.rangePercent / 100
   return {
     materialCost,
     minutes,
     timeFee,
     total,
-    rangeLow: Math.max(r.minimumOrder, roundTo(total * (1 - spread), r.roundTo)),
+    rangeLow: Math.max(minimum, roundTo(total * (1 - spread), r.roundTo)),
     rangeHigh: roundTo(total * (1 + spread), r.roundTo),
   }
+}
+
+export function priceQuote(
+  e: Pick<PrintEstimate, 'grams' | 'timeSec'>,
+  m: MaterialConfig,
+  r: PricingRules = pricingRules,
+): PriceQuote | null {
+  return quote(e, m, r, r.minimumOrder, 0)
+}
+
+/** Giá cho một bàn in nhiều món: phí theo món cộng sau hệ số an toàn, mức tối thiểu riêng. */
+export function priceCombined(
+  e: Pick<PrintEstimate, 'grams' | 'timeSec'>,
+  m: MaterialConfig,
+  itemCount: number,
+  r: PricingRules = pricingRules,
+): PriceQuote | null {
+  return quote(e, m, r, r.combinedMinimumOrder, Math.max(0, itemCount - 1) * r.perItemFee)
 }

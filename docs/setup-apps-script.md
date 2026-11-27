@@ -63,3 +63,5 @@ Script vẫn ghi file được vì nó chạy bằng tài khoản của bạn. N
 4. Chống spam Turnstile và giới hạn đơn theo SĐT được cấu hình ở Worker, không còn ở script này.
 
 Nếu không có gì xảy ra: trong script.google.com, vào **Executions** (biểu tượng danh sách) để xem lỗi.
+
+**Lưu ý bản phát hành nhiều file trên một bàn in:** `Code.gs` đã đổi (vé theo từng file, tên file Drive `NN-<tên>`). Phải deploy lại **trước** khi deploy Worker và chạy migration của bản phát hành này (thứ tự đầy đủ ở mục "Phát hành bản nhiều file trên một bàn in" trong [`setup-cloudflare.md`](setup-cloudflare.md)): **Deploy** → **Manage deployments** → bút chì → **Version: New version** → **Deploy** (giữ nguyên deployment cũ để URL không đổi). Bản mới vẫn nhận cả vé cũ, nên đơn đang gửi dở không bị lỗi.

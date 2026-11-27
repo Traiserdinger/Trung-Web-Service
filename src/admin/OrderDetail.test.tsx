@@ -16,7 +16,7 @@ const order: api.OrderRow = {
 const ev0: api.OrderEvent = { id: 1, orderCode: order.code, status: 'received', note: null, createdAt: '2026-11-24T01:00:00Z', emailSent: null }
 
 it("đổi sang 'Đang giao hàng' + ghi chú → setStatus và timeline thêm dòng", async () => {
-  vi.mocked(api.getOrder).mockResolvedValue({ order, events: [ev0] })
+  vi.mocked(api.getOrder).mockResolvedValue({ order, events: [ev0], files: [], items: [] })
   vi.mocked(api.setStatus).mockResolvedValue({ event: { ...ev0, id: 2, status: 'shipping', note: 'GHN 123', emailSent: 1 } })
   const u = userEvent.setup()
   render(<OrderDetail code={order.code} />)
@@ -32,7 +32,7 @@ it("đổi sang 'Đang giao hàng' + ghi chú → setStatus và timeline thêm d
 })
 
 it('nút xoá chỉ bật khi gõ đúng mã', async () => {
-  vi.mocked(api.getOrder).mockResolvedValue({ order, events: [ev0] })
+  vi.mocked(api.getOrder).mockResolvedValue({ order, events: [ev0], files: [], items: [] })
   const u = userEvent.setup()
   render(<OrderDetail code={order.code} />)
   await u.click(await screen.findByRole('button', { name: 'Xoá đơn rác' }))
@@ -45,14 +45,14 @@ it('nút xoá chỉ bật khi gõ đúng mã', async () => {
 })
 
 it('driveUrl không phải https thì không thành link', async () => {
-  vi.mocked(api.getOrder).mockResolvedValue({ order, events: [ev0] })
+  vi.mocked(api.getOrder).mockResolvedValue({ order, events: [ev0], files: [], items: [] })
   render(<OrderDetail code={order.code} />)
   await screen.findByText('Dòng thời gian')
   expect(screen.queryByRole('link', { name: /javascript/ })).toBeNull()
 })
 
 it('đổi code mà tải lỗi → không còn hiện đơn cũ', async () => {
-  vi.mocked(api.getOrder).mockReset().mockResolvedValueOnce({ order, events: [ev0] }).mockRejectedValueOnce(new Error('Lỗi 404'))
+  vi.mocked(api.getOrder).mockReset().mockResolvedValueOnce({ order, events: [ev0], files: [], items: [] }).mockRejectedValueOnce(new Error('Lỗi 404'))
   const { rerender } = render(<OrderDetail code={order.code} />)
   await screen.findByText('Dòng thời gian')
   rerender(<OrderDetail code="P3D-261124-ZZZZ" />)

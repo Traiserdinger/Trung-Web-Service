@@ -14,6 +14,7 @@
     "deploy:admin": "vite build --config vite.admin.config.ts && wrangler deploy -c wrangler.admin.jsonc"
   },
   "dependencies": {
+    "fflate": "^0.8.3",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "three": "^0.187.0"

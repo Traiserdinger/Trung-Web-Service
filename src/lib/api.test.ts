@@ -8,10 +8,10 @@ const reply = (body: unknown) => vi.fn(async () => new Response(JSON.stringify(b
 
 describe('createOrder', () => {
   it('POSTs JSON to /api/orders and returns the server fields', async () => {
-    const fetchFn = reply({ ok: true, orderCode: 'P3D-261120-AAAA', uploadTicket: 't', trackUrl: 'https://x/tra-cuu?ma=P3D-261120-AAAA', preview: false, fileStatus: 'pending' })
+    const fetchFn = reply({ ok: true, orderCode: 'P3D-261120-AAAA', uploads: [{ fileNo: 1, ticket: 't' }, { fileNo: 0, ticket: 'p' }], trackUrl: 'https://x/tra-cuu?ma=P3D-261120-AAAA', preview: false, fileStatus: 'pending' })
     await expect(createOrder(meta, fetchFn as unknown as typeof fetch)).resolves.toEqual({
       orderCode: 'P3D-261120-AAAA',
-      uploadTicket: 't',
+      uploads: [{ fileNo: 1, ticket: 't' }, { fileNo: 0, ticket: 'p' }],
       trackUrl: 'https://x/tra-cuu?ma=P3D-261120-AAAA',
       preview: false,
       fileStatus: 'pending',

@@ -5,7 +5,7 @@ import { callAppsScript } from '../shared/appsScript.ts'
 import type { Env } from '../shared/env.ts'
 import { json, readJson } from '../shared/http.ts'
 import {
-  changeStatus, deleteOrder, getOrder, listEvents, listOrders, PAGE_SIZE, setEventEmailSent, type OrderRow,
+  changeStatus, deleteOrder, ensureOrderChildren, getOrder, listEvents, listOrderFiles, listOrderItems, listOrders, PAGE_SIZE, setEventEmailSent, type OrderRow,
 } from '../shared/orderRepo.ts'
 
 const NOTE_MAX = 500
@@ -77,7 +77,11 @@ export async function handleOrders(req: Request, env: Env, url: URL): Promise<Re
   if (req.method === 'GET') {
     const order = await getOrder(env.DB, code)
     if (!order) return json({ ok: false }, 404)
-    return json({ ok: true, order, events: await listEvents(env.DB, code) })
+    await ensureOrderChildren(env.DB, code)
+    const [events, files, items] = await Promise.all([
+      listEvents(env.DB, code), listOrderFiles(env.DB, code), listOrderItems(env.DB, code),
+    ])
+    return json({ ok: true, order, events, files, items })
   }
   if (req.method === 'DELETE') {
     const b = await readJson<{ confirm?: unknown }>(req)

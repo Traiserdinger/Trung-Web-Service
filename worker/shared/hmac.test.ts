@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { createHmac } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { hmacHex, makeTicket, signEnvelope, verifyEnvelope, verifyTicket } from './hmac.ts'
+import { hmacHex, makeFileTicket, makeTicket, signEnvelope, verifyEnvelope, verifyFileTicket, verifyTicket } from './hmac.ts'
 
 const NOW = 1_700_000_000_000
 
@@ -58,5 +58,21 @@ describe('vé upload', () => {
   it('vé không phải chuỗi thì false, không ném lỗi', async () => {
     expect(await verifyTicket('s', undefined as unknown as string, 'C1', 10, NOW)).toBe(false)
     expect(await verifyTicket('s', 123 as unknown as string, 'C1', 10, NOW)).toBe(false)
+  })
+})
+
+describe('vé từng file', () => {
+  it('file ticket binds fileNo', async () => {
+    const t = await makeFileTicket('s', 'C1', 1, 500, NOW)
+    expect(await verifyFileTicket('s', t, 'C1', 1, 500, NOW)).toBe(true)
+    expect(await verifyFileTicket('s', t, 'C1', 2, 500, NOW)).toBe(false)
+    expect(await verifyFileTicket('s', t, 'C1', 1, 501, NOW)).toBe(false)
+    expect(await verifyFileTicket('s', t, 'C2', 1, 500, NOW)).toBe(false)
+    expect(await verifyFileTicket('s', t, 'C1', 1, 500, NOW + 901_000)).toBe(false)
+  })
+
+  it('không lẫn với vé cũ', async () => {
+    const old = await makeTicket('s', 'C1', 500, NOW)
+    expect(await verifyFileTicket('s', old, 'C1', 1, 500, NOW)).toBe(false)
   })
 })

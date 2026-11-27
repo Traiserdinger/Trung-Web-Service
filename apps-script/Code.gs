@@ -93,6 +93,18 @@ function verifyTicket_(secret, ticket, code, fileSize) {
   return safeEqual_(hmacHex_(secret, code + '|' + fileSize + '|' + exp), ticket.slice(dot + 1));
 }
 
+/** Vé mới = exp.hmac(secret, code|fileNo|fileSize|exp). */
+function verifyFileTicket_(secret, ticket, code, fileNo, fileSize) {
+  if (!secret || typeof ticket !== 'string') return false;
+  var dot = ticket.indexOf('.');
+  if (dot < 1) return false;
+  var expStr = ticket.slice(0, dot);
+  var exp = Number(expStr);
+  if (!isFinite(exp) || Math.floor(exp) !== exp || String(exp) !== expStr) return false;
+  if (nowSec_() > exp) return false;
+  return safeEqual_(hmacHex_(secret, code + '|' + fileNo + '|' + fileSize + '|' + exp), ticket.slice(dot + 1));
+}
+
 // ---------- Phong bì từ Worker: gửi mail ----------
 
 function handleEnvelope_(props, env) {
@@ -117,12 +129,22 @@ function handleEnvelope_(props, env) {
 function handleUpload_(props, p) {
   var code = p.orderCode;
   var secret = props.getProperty('SHARED_SECRET');
-  if (typeof code !== 'string' || !/^P3D-\d{6}-[A-Z2-9]{4}$/.test(code) || !verifyTicket_(secret, p.uploadTicket, code, p.fileSize)) {
-    return { ok: false, error: 'Phiên gửi file đã hết hạn, vui lòng gửi lại đơn' };
+  var expired = { ok: false, error: 'Phiên gửi file đã hết hạn, vui lòng gửi lại đơn' };
+  if (typeof code !== 'string' || !/^P3D-\d{6}-[A-Z2-9]{4}$/.test(code)) return expired;
+  var fileNo;
+  if (p.fileNo === undefined) {
+    // Vé cũ (code|fileSize|exp): coi là file số 1.
+    fileNo = 1;
+    if (!verifyTicket_(secret, p.uploadTicket, code, p.fileSize)) return expired;
+  } else {
+    fileNo = p.fileNo;
+    if (typeof fileNo !== 'number' || Math.floor(fileNo) !== fileNo || fileNo < 0 || fileNo > 99) return expired;
+    if (!verifyFileTicket_(secret, p.uploadTicket, code, fileNo, p.fileSize)) return expired;
   }
-  if (typeof p.fileBase64 !== 'string' || !p.fileBase64) return { ok: false, error: 'Thiếu file STL' };
+  if (typeof p.fileBase64 !== 'string' || !p.fileBase64) return { ok: false, error: 'Thiếu file' };
   if (p.fileBase64.length > Math.ceil((MAX_FILE_BYTES * 4) / 3) + 4) return { ok: false, error: 'File lớn hơn 35MB, vui lòng gửi qua Zalo' };
-  var fileName = String(p.fileName || 'model.stl').slice(0, 160).replace(/[\\/:*?"<>|\r\n]/g, '_');
+  var safeName = String(p.fileName || 'model.stl').slice(0, 160).replace(/[\\/:*?"<>|\r\n]/g, '_');
+  var fileName = ('0' + fileNo).slice(-2) + '-' + safeName;
 
   // Vé gắn với fileSize: số byte thật phải khớp, không thì vé cho file nhỏ có thể chở file lớn.
   var bytes;
@@ -133,10 +155,10 @@ function handleUpload_(props, p) {
   }
   if (!bytes || bytes.length !== Number(p.fileSize)) return { ok: false, error: 'File không khớp với đơn, vui lòng gửi lại đơn' };
 
-  var folderUrl;
+  var saved;
   var lock = acquireLock_();
   try {
-    folderUrl = saveToDrive_(props.getProperty('DRIVE_FOLDER_ID'), code, fileName, bytes);
+    saved = saveToDrive_(props.getProperty('DRIVE_FOLDER_ID'), code, fileName, bytes);
   } catch (err) {
     console.error('Drive error', err);
     return { ok: false, error: 'Không lưu được file, vui lòng gửi qua Zalo kèm mã đơn' };
@@ -149,7 +171,7 @@ function handleUpload_(props, p) {
     var res = UrlFetchApp.fetch(String(props.getProperty('WORKER_URL')) + '/api/internal/file', {
       method: 'post',
       contentType: 'application/json',
-      payload: JSON.stringify(signEnvelope_(secret, 'fileSaved', { orderCode: code, driveUrl: folderUrl })),
+      payload: JSON.stringify(signEnvelope_(secret, 'fileSaved', { orderCode: code, fileNo: fileNo, driveUrl: saved.folderUrl, fileUrl: saved.fileUrl })),
       muteHttpExceptions: true,
     });
     if (res && res.getResponseCode && res.getResponseCode() >= 300) console.error('fileSaved HTTP ' + res.getResponseCode());
@@ -178,10 +200,9 @@ function saveToDrive_(folderId, code, safeName, bytes) {
   var root = DriveApp.getFolderById(folderId);
   var existing = root.getFoldersByName(code);
   var folder = existing.hasNext() ? existing.next() : root.createFolder(code);
-  if (!folder.getFilesByName(safeName).hasNext()) {
-    folder.createFile(Utilities.newBlob(bytes, 'model/stl', safeName));
-  }
-  return folder.getUrl();
+  var found = folder.getFilesByName(safeName);
+  var file = found.hasNext() ? found.next() : folder.createFile(Utilities.newBlob(bytes, /\.3mf$/i.test(safeName) ? 'model/3mf' : 'model/stl', safeName));
+  return { folderUrl: folder.getUrl(), fileUrl: file.getUrl() };
 }
 
 function json_(obj) {

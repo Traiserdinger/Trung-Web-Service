@@ -13,6 +13,8 @@ interface Props {
   colors: ColorOption[]
   colorId: number
   onColorChange(id: number): void
+  /** Nhiều món: dòng ghi chú phía trên các thông số riêng của món đang chọn */
+  itemCaption?: string | null
 }
 
 function Group({ label, children, id }: { label: string; children: ReactNode; id: string }) {
@@ -56,7 +58,7 @@ function Segmented<T extends string | number>(p: {
   )
 }
 
-export function OptionsPanel({ value, onChange, supportReason, disabled, colors, colorId, onColorChange }: Props) {
+export function OptionsPanel({ value, onChange, supportReason, disabled, colors, colorId, onColorChange, itemCaption }: Props) {
   const set = (patch: Partial<PrintSettings>) => onChange({ ...value, ...patch })
   const { min, max } = uiOptions.quantity
 
@@ -133,6 +135,10 @@ export function OptionsPanel({ value, onChange, supportReason, disabled, colors,
           }))}
         />
       </Group>
+
+      {itemCaption && (
+        <p className="-mb-2 border-t border-dashed border-mist pt-5 text-[13px] font-semibold text-solder">{itemCaption}</p>
+      )}
 
       <div className="grid gap-6 sm:grid-cols-2">
         <Group label="Độ điền đầy" id="opt-infill">

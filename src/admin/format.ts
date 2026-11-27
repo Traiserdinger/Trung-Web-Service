@@ -63,3 +63,16 @@ export function fileSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${vnNum(bytes / 1024)} KB`
   return `${vnNum(bytes / 1024 / 1024)} MB`
 }
+
+export type FileLabel = 'Đã lưu' | 'Gửi qua Zalo' | 'Đang tải' | 'Chưa nhận file'
+
+/** Nhãn trạng thái file; file chờ tải quá 30 phút coi như chưa nhận. */
+export function fileLabel(
+  f: { fileStatus: 'pending' | 'saved' | 'zalo'; fileDelivery: 'upload' | 'zalo' },
+  createdAt: string,
+  now = Date.now(),
+): FileLabel {
+  if (f.fileStatus === 'saved') return 'Đã lưu'
+  if (f.fileStatus === 'zalo' || f.fileDelivery === 'zalo') return 'Gửi qua Zalo'
+  return now - new Date(createdAt).getTime() > 30 * 60_000 ? 'Chưa nhận file' : 'Đang tải'
+}

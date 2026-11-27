@@ -219,6 +219,17 @@ Cần biết:
 5. **Đổi trạng thái** đơn trong admin (ví dụ sang "Đang in 3D") và **gõ ghi chú tiếng Việt có dấu** (ví dụ `Đã in xong, đang kiểm tra bề mặt`). Email gửi tới khách phải có **tiêu đề và nội dung hiện đúng dấu tiếng Việt**. Việc này cũng xác nhận chữ ký HMAC giữa Worker và Apps Script hoạt động đúng với UTF-8 trên môi trường thật. Nếu không có email, kiểm tra `SHARED_SECRET` hai nơi giống hệt nhau và Apps Script đã deploy version mới.
 6. Tra cứu lại đơn: trạng thái mới và ghi chú hiện ra.
 
+## Phát hành bản nhiều file trên một bàn in
+
+Bản này đổi cả Apps Script, cơ sở dữ liệu (migration `0003`, `0004`) và hai Worker. Làm **đúng thứ tự** để đơn đang gửi dở không bị lỗi:
+
+1. **Deploy phiên bản Apps Script mới trước** (xem [`setup-apps-script.md`](setup-apps-script.md)). Bản mới nhận cả vé cũ lẫn vé mới nên làm trước thì không ảnh hưởng gì.
+2. **Chạy migration D1 rồi deploy Worker công khai**: `npm run deploy` (migration `0003` tạo bảng file/món và chuyển đơn cũ, `0004` chạy lại phép chuyển đó). Đơn nào Worker cũ còn ghi sau migration thì Worker mới tự bổ sung dòng file/món còn thiếu ngay lần đầu đơn đó được dùng đến (khi file lưu xong hoặc khi mở trong admin). Giao diện khách (front-end) được phát hành cùng Worker công khai ở bước này.
+3. **Deploy Worker admin sau cùng**: `npm run deploy:admin`, chỉ khi migration `0003` đã chạy xong. Trang admin mới đọc bảng file/món nên deploy trước migration sẽ lỗi.
+4. Khách đang mở tab cũ sẽ thấy "Trang web vừa cập nhật, vui lòng tải lại trang rồi gửi lại": bảo họ tải lại trang là được.
+
+Không chạy `wrangler` lên database thật bằng tay; `npm run deploy` đã lo phần migration.
+
 ## Sửa màu in
 
 Vào trang admin → **Màu** để thêm, sửa, tắt màu (tên và mã màu). Không cần sửa code hay deploy lại. Chỉ **màu mẫu của từng loại nhựa** vẫn nằm ở `src/config/pricingConfig.ts`.

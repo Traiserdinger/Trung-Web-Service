@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { TrackView } from '../shared/orderStatus'
+import { saveRecentOrder } from '../lib/recentOrders'
 import TrackPage from './TrackPage'
 
 const view = (over: Partial<TrackView> = {}): TrackView => ({
@@ -11,6 +12,7 @@ const view = (over: Partial<TrackView> = {}): TrackView => ({
   colorName: 'Đen',
   colorHex: '#1f1f1f',
   quantity: 2,
+  items: [],
   estimateTotal: 150000,
   status: 'printing',
   events: [
@@ -38,6 +40,7 @@ async function submit(code = 'P3D-241124-AB12', phone = '0913014605') {
 }
 
 afterEach(() => {
+  localStorage.clear()
   vi.unstubAllGlobals()
   window.history.pushState({}, '', '/')
 })
@@ -108,5 +111,32 @@ describe('TrackPage', () => {
     render(<TrackPage />)
     await submit()
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Không gửi được, kiểm tra mạng và thử lại'))
+  })
+
+  it('shows recent orders and fills code on click', async () => {
+    saveRecentOrder({ code: 'P3D-241124-AB12', createdAt: '2026-11-24T03:00:00Z', summary: '2 file · PETG' })
+    render(<TrackPage />)
+    expect(screen.getByText('Đơn đã gửi từ máy này')).toBeInTheDocument()
+    const row = screen.getByRole('button', { name: /P3D-241124-AB12 · 24\/11 · 2 file · PETG/ })
+    await userEvent.setup().click(row)
+    expect(screen.getByLabelText('Mã đơn')).toHaveValue('P3D-241124-AB12')
+    expect(screen.getByLabelText('Số điện thoại')).toHaveFocus()
+    expect(screen.getByLabelText('Số điện thoại')).toHaveValue('')
+  })
+
+  it('clear removes recent orders', async () => {
+    saveRecentOrder({ code: 'P3D-241124-AB12', createdAt: '2026-11-24T03:00:00Z', summary: 'x' })
+    render(<TrackPage />)
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Xoá danh sách' }))
+    expect(screen.queryByText('Đơn đã gửi từ máy này')).not.toBeInTheDocument()
+    expect(localStorage.getItem('recentOrders')).toBeNull()
+  })
+
+  it('shows item names and quantities', async () => {
+    mockFetch({ ok: true, order: view({ items: [{ name: 'a.stl', quantity: 2 }, { name: 'b.stl', quantity: 1 }] }) })
+    render(<TrackPage />)
+    await submit()
+    expect(await screen.findByText('a.stl ×2')).toBeInTheDocument()
+    expect(screen.getByText('b.stl ×1')).toBeInTheDocument()
   })
 })

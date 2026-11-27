@@ -35,6 +35,12 @@ Website chạy trên **Cloudflare Workers** (Worker công khai `trung-pcb-3d` v�
 
 > Khi `APPS_SCRIPT_URL` (Worker) còn trống, site chạy như bản preview: đơn vẫn lưu nhưng không upload file, không gửi email hay Telegram.
 
+## Khách quên mã đơn
+
+1. Khách mở lại `/tra-cuu` trên đúng máy đã gửi đơn → mục "Đơn đã gửi từ máy này".
+2. Không có → khách nhắn Zalo, Trung tìm theo SĐT trong ô tìm kiếm của trang admin.
+3. Ô SĐT luôn bắt buộc khi đặt đơn nên đơn nào cũng tìm được theo SĐT.
+
 ## Cấu trúc
 
 ```

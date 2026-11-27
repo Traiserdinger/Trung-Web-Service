@@ -1,7 +1,8 @@
-import { useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import { SiteFooter } from '../components/layout/SiteFooter'
 import { Nav } from '../components/site/Nav'
 import { trackOrder } from '../lib/api'
+import { clearRecentOrders, listRecentOrders } from '../lib/recentOrders'
 import { PROGRESS, STATUS_LABEL, type OrderStatus, type TrackView } from '../shared/orderStatus'
 import { formatVnd } from '../utils/format'
 
@@ -23,6 +24,11 @@ function formatAt(iso: string): string {
   if (Number.isNaN(d.getTime())) return ''
   const p = Object.fromEntries(timeFmt.formatToParts(d).map((x) => [x.type, x.value]))
   return `${p.day}/${p.month} ${p.hour === '24' ? '00' : p.hour}:${p.minute}`
+}
+
+/** dd/MM theo giờ Việt Nam. */
+function formatDay(iso: string): string {
+  return formatAt(iso).split(' ')[0] ?? ''
 }
 
 /** Event mới nhất của một bước (danh sách đã theo thứ tự thời gian tăng dần). */
@@ -56,6 +62,13 @@ function Result({ order }: { order: TrackView }) {
           )}
         </span>
       </p>
+      {order.items.length > 0 && (
+        <ul className="mt-3 space-y-1 text-[14px] text-ink">
+          {order.items.map((it, i) => (
+            <li key={i} className="list-none">{`${it.name} ×${it.quantity}`}</li>
+          ))}
+        </ul>
+      )}
 
       {cancelled ? (
         <div className="mt-6 rounded-[16px] border border-alert p-5">
@@ -100,6 +113,8 @@ export default function TrackPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [order, setOrder] = useState<TrackView | null>(null)
+  const [recent, setRecent] = useState(() => listRecentOrders())
+  const phoneRef = useRef<HTMLInputElement>(null)
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
@@ -141,6 +156,7 @@ export default function TrackPage() {
             </label>
             <input
               id="track-phone"
+              ref={phoneRef}
               type="tel"
               autoComplete="tel"
               className={`${inputCls} mt-1.5`}
@@ -157,6 +173,38 @@ export default function TrackPage() {
             {busy ? 'Đang tra cứu…' : 'Tra cứu'}
           </button>
         </form>
+        {recent.length > 0 && (
+          <section aria-label="Đơn đã gửi từ máy này" className="mt-8">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-[14px] font-semibold">Đơn đã gửi từ máy này</h2>
+              <button
+                type="button"
+                onClick={() => {
+                  clearRecentOrders()
+                  setRecent([])
+                }}
+                className="text-[13px] text-slate underline"
+              >
+                Xoá danh sách
+              </button>
+            </div>
+            <div className="mt-2 space-y-1.5">
+              {recent.map((r) => (
+                <button
+                  key={r.code}
+                  type="button"
+                  onClick={() => {
+                    setCode(r.code)
+                    phoneRef.current?.focus()
+                  }}
+                  className="tnum block w-full rounded-[12px] border border-mist px-3.5 py-2 text-left text-[14px] hover:border-solder"
+                >
+                  {`${r.code} · ${formatDay(r.createdAt)} · ${r.summary}`}
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
         {error && (
           <p role="alert" className="mt-4 text-[14px] text-alert">
             {error}

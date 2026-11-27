@@ -1,7 +1,9 @@
 import { fileLimits } from '../config/pricingConfig'
-import type { Dims, MeshStats } from './meshAnalysis'
-import type { OrderType, QuoteState } from './quoteState'
-import type { PrintSettings } from './slicerEstimator'
+import type { Dims } from './meshAnalysis'
+import type { Placement } from './plateArrange'
+import type { PlateQuote } from './plateState'
+import type { OrderType } from './quoteState'
+import type { SharedSettings } from './slicerEstimator'
 
 export interface CustomerInfo {
   name: string
@@ -48,46 +50,67 @@ export function canUpload(fileSize: number): boolean {
   return fileSize <= fileLimits.uploadMaxBytes
 }
 
-export interface OrderPayload {
+export interface OrderMetaFile {
+  /** 0 = file bàn in (role 'plate'); 1…n = file nguồn */
+  fileNo: number
+  role: 'source' | 'plate'
+  fileName: string
+  fileSize: number
+  fileType: 'stl' | '3mf'
+  fileDelivery: 'upload' | 'zalo'
+}
+
+export interface OrderMetaItem {
+  itemNo: number
+  fileNo: number
+  name: string
+  dims: Dims
+  volume: number
+  surfaceArea: number
+  scale: number
+  orient: 'auto' | 'file' | 'face'
+  infillPercent: number
+  wallLoops: number
+  support: boolean
+  quantity: number
+  placements: Placement[] | null
+  footprint: [number, number][] | null
+}
+
+/** Metadata đơn nhiều file gửi lên Worker (file được tải lên riêng bằng vé từng file). */
+export interface OrderMeta {
   orderCode: string
   orderType: OrderType
   consultReasons: string[]
   customer: { name: string; phone: string; email: string; note: string }
-  settings: PrintSettings
-  dims: Dims
-  surfaceArea: number
-  volume: number
-  estimate: { grams: number; timeSec: number; total: number; rangeLow: number; rangeHigh: number } | null
-  fileName: string
-  fileSize: number
-  fileBase64: string
-  /** 'zalo' khi file quá lớn để gửi qua web: đơn vẫn được ghi, khách gửi file qua Zalo */
-  fileDelivery: 'upload' | 'zalo'
-  /** Hệ số đã nhân vào file khi báo giá (25.4 nếu khách đổi inch → mm) */
-  scale: number
+  colorId: number
+  shared: SharedSettings
+  files: OrderMetaFile[]
+  items: OrderMetaItem[]
+  estimate: {
+    grams: number
+    timeSec: number
+    total: number
+    rangeLow: number
+    rangeHigh: number
+    separateTotal: number | null
+  } | null
   turnstileToken: string | null
   honeypot: string
   createdAt: string
 }
 
-/** Phần metadata của đơn gửi lên Worker (file được tải lên riêng bằng vé). */
-export type OrderMeta = Omit<OrderPayload, 'fileBase64'> & { colorId: number }
-
-export function buildOrderPayload(a: {
+export function buildOrderMeta(a: {
   orderCode: string
-  quote: QuoteState
-  stats: MeshStats
-  settings: PrintSettings
-  customer: CustomerInfo
+  quote: PlateQuote
+  shared: SharedSettings
   colorId: number
-  fileName: string
-  fileSize: number
-  fileBase64: string
-  fileDelivery?: 'upload' | 'zalo'
-  scale?: number
+  customer: CustomerInfo
+  files: OrderMeta['files']
+  items: OrderMeta['items']
   turnstileToken: string | null
   now?: Date
-}): OrderPayload & { colorId: number } {
+}): OrderMeta {
   const { quote } = a
   const estimate =
     quote.orderType === 'quote' && quote.estimate && quote.price
@@ -97,6 +120,7 @@ export function buildOrderPayload(a: {
           total: quote.price.total,
           rangeLow: quote.price.rangeLow,
           rangeHigh: quote.price.rangeHigh,
+          separateTotal: quote.separateTotal,
         }
       : null
   return {
@@ -110,16 +134,10 @@ export function buildOrderPayload(a: {
       note: a.customer.note.trim(),
     },
     colorId: a.colorId,
-    settings: a.settings,
-    dims: a.stats.dims,
-    surfaceArea: a.stats.surfaceArea,
-    volume: a.stats.volume,
+    shared: a.shared,
+    files: a.files,
+    items: a.items,
     estimate,
-    fileName: a.fileName,
-    fileSize: a.fileSize,
-    fileBase64: a.fileBase64,
-    fileDelivery: a.fileDelivery ?? 'upload',
-    scale: a.scale ?? 1,
     turnstileToken: a.turnstileToken,
     honeypot: a.customer.honeypot,
     createdAt: (a.now ?? new Date()).toISOString(),

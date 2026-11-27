@@ -6,7 +6,7 @@ const NETWORK = 'Không gửi được, kiểm tra mạng và thử lại'
 
 export interface CreatedOrder {
   orderCode: string
-  uploadTicket: string | null
+  uploads: { fileNo: number; ticket: string }[]
   trackUrl: string
   preview: boolean
   fileStatus: 'pending' | 'saved' | 'zalo'
@@ -14,7 +14,12 @@ export interface CreatedOrder {
 
 /** Bước 1: ghi đơn (không kèm file) qua Worker cùng origin. */
 export async function createOrder(meta: OrderMeta, fetchFn: typeof fetch = fetch): Promise<CreatedOrder> {
-  let res: { ok?: boolean; error?: string; orderCode?: string; uploadTicket?: string | null; trackUrl?: string
+  let res: {
+    ok?: boolean
+    error?: string
+    orderCode?: string
+    uploads?: unknown
+    trackUrl?: string
     preview?: boolean
     fileStatus?: string
   }
@@ -31,7 +36,12 @@ export async function createOrder(meta: OrderMeta, fetchFn: typeof fetch = fetch
   if (!res || !res.ok) throw new OrderSubmitError(res?.error || NETWORK)
   return {
     orderCode: res.orderCode ?? meta.orderCode,
-    uploadTicket: res.uploadTicket ?? null,
+    uploads: Array.isArray(res.uploads)
+      ? res.uploads.filter(
+          (u): u is { fileNo: number; ticket: string } =>
+            !!u && typeof u.fileNo === 'number' && typeof u.ticket === 'string' && u.ticket !== '',
+        )
+      : [],
     trackUrl: res.trackUrl ?? '',
     preview: res.preview === true,
     fileStatus: res.fileStatus === 'saved' || res.fileStatus === 'zalo' ? res.fileStatus : 'pending',

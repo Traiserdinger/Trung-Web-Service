@@ -47,4 +47,23 @@ describe('QuoteResult', () => {
     expect(screen.queryByText(/Tạm tính/)).not.toBeInTheDocument()
     expect(screen.getByText(/ABS/)).toBeInTheDocument()
   })
+
+  it('QuoteResult shows savings lines', () => {
+    render(<QuoteResult quote={quote} stats={null} onSubmit={vi.fn()} savings={8000} separateTotal={40000} pending={false} />)
+    expect(screen.getByText('In riêng từng món: 40.000đ → Gộp chung bàn: 32.000đ')).toBeInTheDocument()
+    expect(screen.getByText('Bạn tiết kiệm 8.000đ')).toBeInTheDocument()
+  })
+
+  it('shows the arranging state instead of a price while pending', () => {
+    const waiting: QuoteState = { orderType: 'quote', consultReasons: [], estimate: null, price: null }
+    render(<QuoteResult quote={waiting} stats={null} onSubmit={vi.fn()} savings={null} separateTotal={null} pending />)
+    expect(screen.getByText('Đang xếp bàn…')).toBeInTheDocument()
+    expect(screen.queryByText(/Cần tư vấn/)).toBeNull()
+    expect(screen.getByRole('button', { name: 'Gửi yêu cầu in' })).toBeDisabled()
+  })
+
+  it('hides the savings lines without savings', () => {
+    render(<QuoteResult quote={quote} stats={stats} onSubmit={vi.fn()} savings={null} separateTotal={null} pending={false} />)
+    expect(screen.queryByText(/Bạn tiết kiệm/)).toBeNull()
+  })
 })

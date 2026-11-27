@@ -66,7 +66,52 @@ export async function getOrder(db: D1Database, code: string): Promise<OrderRow |
   return db.prepare(`SELECT ${ORDER_COLS} FROM orders WHERE code = ?`).bind(code).first<OrderRow>()
 }
 
-export async function insertOrder(db: D1Database, o: OrderRow): Promise<void> {
+export interface OrderFileRow {
+  orderCode: string
+  fileNo: number
+  role: 'source' | 'plate'
+  fileName: string
+  fileSize: number
+  fileType: 'stl' | '3mf'
+  fileDelivery: 'upload' | 'zalo'
+  fileStatus: 'pending' | 'saved' | 'zalo'
+  driveUrl: string | null
+}
+
+export interface OrderItemRow {
+  orderCode: string
+  itemNo: number
+  fileNo: number
+  name: string
+  dims: string
+  volume: number
+  surfaceArea: number
+  scale: number
+  orient: string | null
+  infillPercent: number
+  wallLoops: number
+  support: number
+  quantity: number
+  placements: string | null
+  footprint: string | null
+}
+
+// Trạng thái tổng hợp của đơn, chỉ tính file nguồn (file bàn in bỏ qua).
+export function aggregateFileStatus(
+  files: Pick<OrderFileRow, 'role' | 'fileStatus' | 'fileDelivery'>[],
+): 'pending' | 'saved' | 'zalo' {
+  const sources = files.filter((f) => f.role === 'source')
+  if (sources.some((f) => f.fileDelivery === 'zalo')) return 'zalo'
+  if (sources.some((f) => f.fileStatus !== 'saved')) return 'pending'
+  return 'saved'
+}
+
+export async function insertOrder(
+  db: D1Database,
+  o: OrderRow,
+  files: OrderFileRow[] = [],
+  items: OrderItemRow[] = [],
+): Promise<void> {
   await db.batch([
     db
       .prepare(
@@ -82,6 +127,26 @@ export async function insertOrder(db: D1Database, o: OrderRow): Promise<void> {
         o.colorId, o.colorName, o.colorHex, o.fileName, o.fileSize, o.fileDelivery, o.fileStatus,
         o.driveUrl, o.fingerprint, o.status, o.statusUpdatedAt,
       ),
+    ...files.map((f) =>
+      db
+        .prepare(
+          `INSERT INTO order_files (order_code, file_no, role, file_name, file_size, file_type, file_delivery,
+            file_status, drive_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(o.code, f.fileNo, f.role, f.fileName, f.fileSize, f.fileType, f.fileDelivery, f.fileStatus, f.driveUrl),
+    ),
+    ...items.map((i) =>
+      db
+        .prepare(
+          `INSERT INTO order_items (order_code, item_no, file_no, name, dims, volume, surface_area, scale, orient,
+            infill_percent, wall_loops, support, quantity, placements, footprint)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          o.code, i.itemNo, i.fileNo, i.name, i.dims, i.volume, i.surfaceArea, i.scale, i.orient,
+          i.infillPercent, i.wallLoops, i.support, i.quantity, i.placements, i.footprint,
+        ),
+    ),
     db
       .prepare(
         'INSERT INTO order_events (order_code, status, note, created_at, email_sent) VALUES (?, ?, NULL, ?, NULL)',
@@ -90,12 +155,92 @@ export async function insertOrder(db: D1Database, o: OrderRow): Promise<void> {
   ])
 }
 
-// Đánh dấu file đã lưu Drive; true nếu có đơn đang chờ file được cập nhật.
-export async function setFileSaved(db: D1Database, code: string, driveUrl: string): Promise<boolean> {
-  const r = await db
-    .prepare("UPDATE orders SET file_status = 'saved', drive_url = ? WHERE code = ? AND file_status = 'pending'")
-    .bind(driveUrl, code)
-    .run()
+export async function listOrderFiles(db: D1Database, code: string): Promise<OrderFileRow[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT order_code AS orderCode, file_no AS fileNo, role, file_name AS fileName, file_size AS fileSize,
+        file_type AS fileType, file_delivery AS fileDelivery, file_status AS fileStatus, drive_url AS driveUrl
+       FROM order_files WHERE order_code = ? ORDER BY file_no`,
+    )
+    .bind(code)
+    .all<OrderFileRow>()
+  return results
+}
+
+export async function listOrderItems(db: D1Database, code: string): Promise<OrderItemRow[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT order_code AS orderCode, item_no AS itemNo, file_no AS fileNo, name, dims, volume,
+        surface_area AS surfaceArea, scale, orient, infill_percent AS infillPercent, wall_loops AS wallLoops,
+        support, quantity, placements, footprint
+       FROM order_items WHERE order_code = ? ORDER BY item_no`,
+    )
+    .bind(code)
+    .all<OrderItemRow>()
+  return results
+}
+
+// Đơn do Worker bản cũ ghi lúc chuyển đổi giữa hai bản phát hành chưa có dòng file/món (migration chạy
+// trước khi Worker mới thay thế). Bổ sung theo từng đơn, cùng phép chuyển như migration 0003/0004:
+// 1 file nguồn + 1 món. Đơn đã có dòng thì bỏ qua nên gọi lại bao nhiêu lần cũng an toàn.
+export async function ensureOrderChildren(db: D1Database, code: string): Promise<void> {
+  await db.batch([
+    db
+      .prepare(
+        `INSERT INTO order_files
+          (order_code, file_no, role, file_name, file_size, file_type, file_delivery, file_status, drive_url)
+         SELECT code, 1, 'source', COALESCE(file_name, 'model.stl'), COALESCE(file_size, 0), 'stl',
+          COALESCE(file_delivery, 'upload'), COALESCE(file_status, 'pending'), drive_url
+         FROM orders
+         WHERE code = ? AND NOT EXISTS (SELECT 1 FROM order_files f WHERE f.order_code = orders.code)`,
+      )
+      .bind(code),
+    db
+      .prepare(
+        `INSERT INTO order_items
+          (order_code, item_no, file_no, name, dims, volume, surface_area, scale, orient,
+           infill_percent, wall_loops, support, quantity, placements, footprint)
+         SELECT code, 1, 1, COALESCE(file_name, 'model.stl'), COALESCE(dims, 'null'), COALESCE(volume, 0),
+          COALESCE(surface_area, 0), COALESCE(scale, 1), NULL,
+          COALESCE(CASE WHEN json_valid(settings) THEN json_extract(settings, '$.infillPercent') END, 20),
+          COALESCE(CASE WHEN json_valid(settings) THEN json_extract(settings, '$.wallLoops') END, 2),
+          COALESCE(CASE WHEN json_valid(settings) THEN json_extract(settings, '$.support') END, 0),
+          COALESCE(CASE WHEN json_valid(settings) THEN json_extract(settings, '$.quantity') END, 1),
+          NULL, NULL
+         FROM orders
+         WHERE code = ? AND NOT EXISTS (SELECT 1 FROM order_items i WHERE i.order_code = orders.code)`,
+      )
+      .bind(code),
+  ])
+}
+
+// Đánh dấu một file đã lưu Drive, đặt URL thư mục và tính lại trạng thái tổng hợp của đơn.
+// Cả hai câu lệnh chạy trong một batch và câu thứ hai tính trạng thái từ order_files ngay trong SQL,
+// nên hai lần gọi gần như cùng lúc không thể để orders.file_status cũ (định nghĩa mẫu: aggregateFileStatus).
+// true nếu có file đang chờ được cập nhật.
+export async function setFileSaved(
+  db: D1Database,
+  code: string,
+  fileNo: number,
+  fileUrl: string,
+  folderUrl: string,
+): Promise<boolean> {
+  const [r] = await db.batch([
+    db
+      .prepare(
+        "UPDATE order_files SET file_status = 'saved', drive_url = ? WHERE order_code = ? AND file_no = ? AND file_status = 'pending'",
+      )
+      .bind(fileUrl, code, fileNo),
+    db
+      .prepare(
+        `UPDATE orders SET drive_url = ?3, file_status = CASE
+           WHEN EXISTS (SELECT 1 FROM order_files WHERE order_code = ?1 AND role = 'source' AND file_delivery = 'zalo') THEN 'zalo'
+           WHEN EXISTS (SELECT 1 FROM order_files WHERE order_code = ?1 AND role = 'source' AND file_status != 'saved') THEN 'pending'
+           ELSE 'saved' END
+         WHERE code = ?1 AND EXISTS (SELECT 1 FROM order_files WHERE order_code = ?1 AND file_no = ?2 AND file_status = 'saved')`,
+      )
+      .bind(code, fileNo, folderUrl),
+  ])
   return (r.meta.changes ?? 0) > 0
 }
 
@@ -187,6 +332,8 @@ export async function setEventEmailSent(db: D1Database, eventId: number, sent: b
 export async function deleteOrder(db: D1Database, code: string): Promise<void> {
   await db.batch([
     db.prepare('DELETE FROM order_events WHERE order_code = ?').bind(code),
+    db.prepare('DELETE FROM order_files WHERE order_code = ?').bind(code),
+    db.prepare('DELETE FROM order_items WHERE order_code = ?').bind(code),
     db.prepare('DELETE FROM orders WHERE code = ?').bind(code),
   ])
 }

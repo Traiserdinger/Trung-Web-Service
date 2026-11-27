@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import type { OrderRow } from './orderRepo.ts'
+import type { OrderItemRow, OrderRow } from './orderRepo.ts'
 import { formatOwnerMessage } from './ownerMessage.ts'
 
 function row(over: Partial<OrderRow> = {}): OrderRow {
@@ -36,7 +36,7 @@ function row(over: Partial<OrderRow> = {}): OrderRow {
 
 describe('formatOwnerMessage', () => {
   it('đầu thư: tiêu đề, dòng Admin, dòng Màu sau dòng nhựa', () => {
-    const lines = formatOwnerMessage(row(), 'https://admin/#/orders/P3D-250101-ABCD').split('\n')
+    const lines = formatOwnerMessage(row(), 'https://admin/#/orders/P3D-250101-ABCD', []).split('\n')
     expect(lines[0]).toBe('🟢 ĐƠN IN 3D P3D-250101-ABCD')
     expect(lines[1]).toBe('Admin: https://admin/#/orders/P3D-250101-ABCD')
     const i = lines.findIndex((l) => l.startsWith('Nhựa '))
@@ -46,25 +46,60 @@ describe('formatOwnerMessage', () => {
   })
 
   it('ghi chú nhiều dòng được thụt lề, không giả được dòng hệ thống', () => {
-    const t = formatOwnerMessage(row({ customerNote: 'a\nDrive: giả' }), 'u')
+    const t = formatOwnerMessage(row({ customerNote: 'a\nDrive: giả' }), 'u', [])
     expect(t.endsWith('Ghi chú:\n  a\n  Drive: giả')).toBe(true)
   })
 
   it('xuống dòng trong giá trị settings không tạo dòng mới', () => {
     const bad = JSON.stringify({ material: 'PLA\nDrive: x', layerHeight: '0.2\nDrive: y', infillPercent: 15, wallLoops: 2, support: false, quantity: '1\nDrive: fake' })
-    const t = formatOwnerMessage(row({ settings: bad }), 'u')
+    const t = formatOwnerMessage(row({ settings: bad }), 'u', [])
     expect(t.split('\n').filter((l) => l.startsWith('Drive:'))).toHaveLength(0)
   })
 
   it('tư vấn: tiêu đề cam và lý do một dòng', () => {
-    const t = formatOwnerMessage(row({ orderType: 'consult', consultReasons: '["x\\ny"]', estimate: null }), 'u')
+    const t = formatOwnerMessage(row({ orderType: 'consult', consultReasons: '["x\\ny"]', estimate: null }), 'u', [])
     expect(t.startsWith('🟠 CẦN TƯ VẤN ')).toBe(true)
     expect(t).toContain('Lý do: x y')
   })
 
   it('cắt ở 4000 ký tự, kết thúc bằng …', () => {
-    const t = formatOwnerMessage(row({ customerNote: 'x'.repeat(5000) }), 'u')
+    const t = formatOwnerMessage(row({ customerNote: 'x'.repeat(5000) }), 'u', [])
     expect(t).toHaveLength(4000)
     expect(t.endsWith('…')).toBe(true)
+  })
+
+  it('owner message lists items', () => {
+    const it = (itemNo: number, name: string, quantity: number, support: number): OrderItemRow => ({
+      orderCode: 'P3D-250101-ABCD', itemNo, fileNo: 1, name, dims: '{}', volume: 1, surfaceArea: 1, scale: 1,
+      orient: null, infillPercent: 15, wallLoops: 2, support, quantity, placements: null, footprint: null,
+    })
+    const lines = formatOwnerMessage(row(), 'u', [it(1, 'moc-khoa.stl', 2, 1), it(2, 'a\nDrive: x.stl', 1, 0)]).split('\n')
+    expect(lines).toContain('#1 moc-khoa.stl ×2 · đặc 15% · 2 vỏ · support')
+    expect(lines).toContain('#2 a Drive: x.stl ×1 · đặc 15% · 2 vỏ')
+    expect(lines.filter((l) => l.startsWith('Drive:'))).toHaveLength(0)
+    expect(lines.find((l) => l.startsWith('Nhựa '))).toBe('Nhựa PLA, lớp 0.2 mm')
+  })
+
+  it('flags an item whose file is in inches', () => {
+    const it = (itemNo: number, scale: number): OrderItemRow => ({
+      orderCode: 'P3D-250101-ABCD', itemNo, fileNo: 1, name: `m${itemNo}`, dims: '{}', volume: 1, surfaceArea: 1, scale,
+      orient: null, infillPercent: 15, wallLoops: 2, support: 0, quantity: 1, placements: null, footprint: null,
+    })
+    const lines = formatOwnerMessage(row(), 'u', [it(1, 1), it(2, 25.4)]).split('\n')
+    expect(lines).toContain('#1 m1 ×1 · đặc 15% · 2 vỏ')
+    expect(lines).toContain('#2 m2 ×1 · đặc 15% · 2 vỏ · inch×25,4')
+  })
+
+  it('Zalo line: only mentions "File lớn" when a source is over 35 MB', () => {
+    const f = (fileSize: number) => ({
+      orderCode: 'P3D-250101-ABCD', fileNo: 1, role: 'source' as const, fileName: 'a.stl', fileSize, fileType: 'stl' as const,
+      fileDelivery: 'zalo' as const, fileStatus: 'zalo' as const, driveUrl: null,
+    })
+    const z = row({ fileDelivery: 'zalo', fileName: 'a.stl +10' })
+    const small = formatOwnerMessage(z, 'u', [], [f(1000)])
+    expect(small).toContain('📎 Khách sẽ gửi file qua Zalo: a.stl +10')
+    expect(small).not.toContain('File lớn')
+    const big = formatOwnerMessage(z, 'u', [], [f(36 * 1024 * 1024)])
+    expect(big).toContain('📎 File lớn, khách sẽ gửi file qua Zalo: a.stl +10')
   })
 })

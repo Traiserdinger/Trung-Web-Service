@@ -84,3 +84,34 @@ export async function verifyTicket(
   const expected = await hmacHex(secret, `${code}|${fileSize}|${exp}`)
   return safeEqual(expected, ticket.slice(dot + 1))
 }
+
+// Vé theo từng file: ràng buộc cả số file để vé của file này không dùng được cho file khác.
+export async function makeFileTicket(
+  secret: string,
+  code: string,
+  fileNo: number,
+  fileSize: number,
+  now = Date.now(),
+): Promise<string> {
+  const exp = Math.floor(now / 1000) + TICKET_TTL_SEC
+  return `${exp}.${await hmacHex(secret, `${code}|${fileNo}|${fileSize}|${exp}`)}`
+}
+
+export async function verifyFileTicket(
+  secret: string,
+  ticket: string,
+  code: string,
+  fileNo: number,
+  fileSize: number,
+  now = Date.now(),
+): Promise<boolean> {
+  if (typeof ticket !== 'string') return false
+  const dot = ticket.indexOf('.')
+  if (dot < 1) return false
+  const expStr = ticket.slice(0, dot)
+  const exp = Number(expStr)
+  if (!Number.isInteger(exp) || String(exp) !== expStr) return false
+  if (Math.floor(now / 1000) > exp) return false
+  const expected = await hmacHex(secret, `${code}|${fileNo}|${fileSize}|${exp}`)
+  return safeEqual(expected, ticket.slice(dot + 1))
+}
