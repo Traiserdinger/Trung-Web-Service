@@ -6,7 +6,8 @@ export interface DropZoneHandle {
 }
 
 interface Props {
-  onFile(f: File): void
+  /** Các file hợp lệ trong một lần thả / chọn (STL hoặc 3MF) */
+  onFiles(files: File[]): void
   disabled?: boolean
   /** true khi chưa có file: hiện lời mời thả file phủ giữa khung */
   empty: boolean
@@ -14,7 +15,7 @@ interface Props {
 }
 
 /** Biến cả sân khấu 3D thành vùng thả file. */
-export const DropZone = forwardRef<DropZoneHandle, Props>(function DropZone({ onFile, disabled, empty, children }, ref) {
+export const DropZone = forwardRef<DropZoneHandle, Props>(function DropZone({ onFiles, disabled, empty, children }, ref) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [over, setOver] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -22,18 +23,21 @@ export const DropZone = forwardRef<DropZoneHandle, Props>(function DropZone({ on
   const open = () => !disabled && inputRef.current?.click()
   useImperativeHandle(ref, () => ({ openPicker: open }))
 
-  const accept = (f: File | undefined) => {
-    if (!f) return
-    if (!f.name.toLowerCase().endsWith('.stl')) {
-      setError('Chỉ nhận file .stl. Với file STEP hay 3MF, hãy gửi qua Zalo.')
-      return
+  const accept = (list: FileList | null | undefined) => {
+    const all = Array.from(list ?? [])
+    if (all.length === 0) return
+    const ok: File[] = []
+    let problem: string | null = null
+    for (const f of all) {
+      const name = f.name.toLowerCase()
+      if (!name.endsWith('.stl') && !name.endsWith('.3mf')) {
+        problem = 'Chỉ nhận file .stl hoặc .3mf. Với file STEP, hãy gửi qua Zalo.'
+      } else if (f.size > fileLimits.previewMaxBytes) {
+        problem = `File lớn hơn ${Math.round(fileLimits.previewMaxBytes / 1024 / 1024)} MB. Hãy gửi qua Zalo để mình xem trực tiếp.`
+      } else ok.push(f)
     }
-    if (f.size > fileLimits.previewMaxBytes) {
-      setError(`File lớn hơn ${Math.round(fileLimits.previewMaxBytes / 1024 / 1024)} MB. Hãy gửi qua Zalo để mình xem trực tiếp.`)
-      return
-    }
-    setError(null)
-    onFile(f)
+    setError(problem)
+    if (ok.length > 0) onFiles(ok)
   }
 
   return (
@@ -58,7 +62,7 @@ export const DropZone = forwardRef<DropZoneHandle, Props>(function DropZone({ on
             setError('Đang xử lý file hoặc gửi đơn. Đợi xong rồi hãy thả file mới.')
             return
           }
-          accept(e.dataTransfer.files[0])
+          accept(e.dataTransfer.files)
         }}
       >
         {children}
@@ -70,8 +74,8 @@ export const DropZone = forwardRef<DropZoneHandle, Props>(function DropZone({ on
                 <path d="M24 6 40 15v18L24 42 8 33V15z" strokeLinejoin="round" />
                 <path d="M8 15l16 9 16-9M24 24v18" strokeLinejoin="round" />
               </svg>
-              <div className="mt-3 font-display text-[22px] font-bold text-ink">Thả file STL vào đây</div>
-              <p className="mt-1 text-[14px] text-slate">STL dạng binary hoặc ASCII, tối đa 100 MB</p>
+              <div className="mt-3 font-display text-[22px] font-bold text-ink">Thả file STL hoặc 3MF vào đây</div>
+              <p className="mt-1 text-[14px] text-slate">Chọn được nhiều file một lúc, tối đa 100 MB mỗi file</p>
               <button
                 type="button"
                 onClick={open}
@@ -93,11 +97,12 @@ export const DropZone = forwardRef<DropZoneHandle, Props>(function DropZone({ on
       <input
         ref={inputRef}
         type="file"
+        multiple
         // iOS Safari chỉ nhận đuôi file khi kèm cả kiểu MIME, nếu không sẽ làm mờ file .stl
-        accept=".stl,model/stl,application/sla,application/vnd.ms-pki.stl,application/octet-stream"
+        accept=".stl,model/stl,application/sla,application/vnd.ms-pki.stl,application/octet-stream,.3mf,model/3mf"
         className="hidden"
         onChange={(e) => {
-          accept(e.target.files?.[0])
+          accept(e.target.files)
           e.target.value = ''
         }}
       />

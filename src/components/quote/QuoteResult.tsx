@@ -4,8 +4,14 @@ import type { QuoteState } from '../../utils/quoteState'
 
 interface Props {
   quote: QuoteState | null
+  /** Thông số mesh của đơn một món; nhiều món thì null (ẩn phần thông số mesh) */
   stats: MeshStats | null
   onSubmit(): void
+  /** Số tiền bớt được khi gộp chung bàn so với in riêng từng món */
+  savings?: number | null
+  separateTotal?: number | null
+  /** Đang xếp bàn: chưa có giá */
+  pending?: boolean
 }
 
 const fmt = (n: number, digits = 0) => n.toLocaleString('vi-VN', { maximumFractionDigits: digits })
@@ -24,8 +30,8 @@ function TicketEdge() {
   )
 }
 
-export function QuoteResult({ quote, stats, onSubmit }: Props) {
-  if (!quote || !stats) {
+export function QuoteResult({ quote, stats, onSubmit, savings = null, separateTotal = null, pending = false }: Props) {
+  if (!quote) {
     return (
       <div className="rounded-[18px] border border-dashed border-mist px-5 py-6 text-[15px] text-slate">
         Giá tạm tính hiện ở đây ngay khi bạn thả file STL vào khung bên cạnh.
@@ -39,7 +45,12 @@ export function QuoteResult({ quote, stats, onSubmit }: Props) {
     <div className="drop-shadow-[0_18px_30px_rgb(27_36_32/0.12)]">
       <TicketEdge />
       <div className="bg-paper px-6 pt-4 pb-6">
-        {isQuote ? (
+        {pending ? (
+          <div className="flex items-center gap-3 py-6 text-[16px] font-semibold text-ink" aria-live="polite">
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-mist border-t-solder" aria-hidden="true" />
+            Đang xếp bàn…
+          </div>
+        ) : isQuote ? (
           <>
             <div className="flex items-end justify-between gap-4">
               <div>
@@ -55,6 +66,16 @@ export function QuoteResult({ quote, stats, onSubmit }: Props) {
                 </div>
               </div>
             </div>
+            {savings !== null && separateTotal !== null && (
+              <div className="mt-4 space-y-1.5">
+                <p className="text-[14px] text-slate tnum">
+                  In riêng từng món: {formatVnd(separateTotal)} → Gộp chung bàn: {formatVnd(quote.price!.total)}
+                </p>
+                <p className="inline-block rounded-full bg-solder-tint px-3 py-1 text-[14px] font-semibold text-solder tnum">
+                  Bạn tiết kiệm {formatVnd(savings)}
+                </p>
+              </div>
+            )}
             <dl className="mt-5 grid grid-cols-2 border-y border-dashed border-mist py-4 text-[14px]">
               <div>
                 <dt className="text-slate">Nhựa</dt>
@@ -89,9 +110,10 @@ export function QuoteResult({ quote, stats, onSubmit }: Props) {
         <button
           type="button"
           onClick={onSubmit}
-          className="mt-5 w-full rounded-full bg-solder-fill px-5 py-3.5 text-[15px] font-semibold text-white transition-colors hover:bg-solder-deep"
+          disabled={pending}
+          className="mt-5 w-full rounded-full bg-solder-fill px-5 py-3.5 text-[15px] font-semibold text-white transition-colors hover:bg-solder-deep disabled:opacity-60"
         >
-          {isQuote ? 'Gửi yêu cầu in' : 'Gửi yêu cầu tư vấn'}
+          {isQuote || pending ? 'Gửi yêu cầu in' : 'Gửi yêu cầu tư vấn'}
         </button>
 
         <details className="group mt-4 text-[13px] text-slate">
@@ -99,12 +121,16 @@ export function QuoteResult({ quote, stats, onSubmit }: Props) {
             <span className="inline-block transition-transform group-open:rotate-90">›</span> Chi tiết kỹ thuật
           </summary>
           <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 tnum">
-            <dt>Diện tích bề mặt</dt>
-            <dd className="text-ink">{fmt(stats.surfaceArea, 1)} mm²</dd>
-            <dt>Thể tích</dt>
-            <dd className="text-ink">{fmt(stats.volume, 1)} mm³</dd>
-            <dt>Chiều cao</dt>
-            <dd className="text-ink">{fmt(stats.dims.height, 1)} mm</dd>
+            {stats && (
+              <>
+                <dt>Diện tích bề mặt</dt>
+                <dd className="text-ink">{fmt(stats.surfaceArea, 1)} mm²</dd>
+                <dt>Thể tích</dt>
+                <dd className="text-ink">{fmt(stats.volume, 1)} mm³</dd>
+                <dt>Chiều cao</dt>
+                <dd className="text-ink">{fmt(stats.dims.height, 1)} mm</dd>
+              </>
+            )}
             {quote.estimate && (
               <>
                 <dt>Số lớp</dt>

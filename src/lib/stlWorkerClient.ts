@@ -71,15 +71,6 @@ export function parseFileInWorker(
   return call<{ parts: ParsedPart[] }>({ kind: 'parseFile', buffer, fileType, scale, autoOrient }).then((r) => r.parts)
 }
 
-/** Đọc STL (một phần). Giữ lại cho đến khi báo giá dùng parseFileInWorker. */
-export function parseStlInWorker(buffer: ArrayBuffer, scale = 1, autoOrient = false): Promise<WorkerResult> {
-  return parseFileInWorker(buffer, 'stl', scale, autoOrient).then(([p]) => ({
-    positions: p.positions,
-    stats: p.stats,
-    rotated: p.rotated,
-  }))
-}
-
 /** Tính lại mesh từ `source` (bản sao) với scale / tự xoay mới. */
 export function prepareInWorker(source: Float32Array, scale: number, autoOrient: boolean): Promise<WorkerResult> {
   return call({ kind: 'prepare', source: source.slice(), scale, autoOrient })

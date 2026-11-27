@@ -4,23 +4,35 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import type { BedSize } from '../../config/pricingConfig'
 import type { Vec3 } from '../../utils/orientation'
+import type { Placement } from '../../utils/plateArrange'
 
 export interface StlViewerHandle {
   resetView(): void
 }
 
-export interface StlViewerProps {
-  positions: Float32Array | null
-  color: string
+export interface ViewerPart {
+  id: string
+  /** Mesh đã xoay, XZ ở giữa gốc, đáy ở y = 0 */
+  positions: Float32Array
+  /** Vị trí từng bản trên bàn; null = vẽ một bản ở giữa bàn (đang xếp, hoặc một món không vừa) */
+  placements: Placement[] | null
   overflow: boolean
+  selected: boolean
+}
+
+export interface StlViewerProps {
+  parts: ViewerPart[]
+  color: string
   bed: BedSize
   /** Bàn in tông tối cho giao diện tối */
   dark?: boolean
   /** Chế độ chọn mặt: rê chuột tô sáng mặt phẳng, bấm để đặt mặt đó xuống bàn */
   pickFace?: boolean
-  /** Pháp tuyến hướng ra ngoài của mặt được chọn, trong hệ toạ độ đang hiển thị */
-  onPickFace?: (down: Vec3) => void
+  /** Pháp tuyến hướng ra ngoài của mặt được chọn, trong hệ toạ độ của món (đã bỏ phép xoay trên bàn) */
+  onPickFace?: (partId: string, down: Vec3) => void
   onCancelPick?: () => void
+  /** Bấm (không kéo) vào một món ngoài chế độ chọn mặt */
+  onSelectPart?: (partId: string) => void
 }
 
 const BED_THEME = {
@@ -29,14 +41,29 @@ const BED_THEME = {
 }
 
 const OVERFLOW_COLOR = '#f59e0b'
+const SELECTED_EMISSIVE = 0x1f8f5a
+
+type PartMesh = THREE.Mesh<THREE.BufferGeometry, THREE.MeshPhysicalMaterial>
+
+interface PartEntry {
+  positions: Float32Array
+  geometry: THREE.BufferGeometry
+  material: THREE.MeshPhysicalMaterial
+}
+
+/** Toạ độ bàn (mm từ góc bàn, ngược chiều kim đồng hồ nhìn từ trên) sang vị trí / góc xoay của three.js */
+function placementTransform(p: Placement, bed: BedSize): { x: number; z: number; rotY: number } {
+  return { x: p.x - bed.x / 2, z: -(p.y - bed.y / 2), rotY: (p.rotDeg * Math.PI) / 180 }
+}
 
 interface Ctx {
   renderer: THREE.WebGLRenderer
   scene: THREE.Scene
   camera: THREE.PerspectiveCamera
   controls: OrbitControls
-  mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshPhysicalMaterial> | null
-  material: THREE.MeshPhysicalMaterial
+  /** Mọi bản của mọi món đang vẽ */
+  group: THREE.Group
+  entries: Map<string, PartEntry>
   frame: number
   dirty: boolean
   viewHeight: number
@@ -46,7 +73,11 @@ interface Ctx {
   highlight: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>
   /** Tam giác đang được rê chuột tới ở chế độ chọn mặt (-1 = không có) */
   hoverFace: number
+  hoverMesh: PartMesh | null
+  /** Pháp tuyến trong hệ toạ độ của món */
   hoverNormal: THREE.Vector3
+  /** Khoá đặt lại góc nhìn: chỉ đổi khi đổi mesh hoặc chuyển giữa một bản / nhiều bản */
+  viewKey: string
 }
 
 interface Bed {
@@ -127,16 +158,28 @@ function planarRegion(p: Float32Array, face: number, n: THREE.Vector3): Float32A
   return new Float32Array(out)
 }
 
+const positionsIds = new WeakMap<Float32Array, number>()
+let nextPositionsId = 1
+/** Số nhận diện cho từng mảng positions, để biết mesh đổi mà không so từng phần tử */
+function positionsId(p: Float32Array): number {
+  let id = positionsIds.get(p)
+  if (!id) {
+    id = nextPositionsId++
+    positionsIds.set(p, id)
+  }
+  return id
+}
+
 export const StlViewer = forwardRef<StlViewerHandle, StlViewerProps>(function StlViewer(
-  { positions, color, overflow, bed, dark = false, pickFace = false, onPickFace, onCancelPick },
+  { parts, color, bed, dark = false, pickFace = false, onPickFace, onCancelPick, onSelectPart },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement>(null)
   const ctxRef = useRef<Ctx | null>(null)
   // Giá trị mới nhất cho các listener gắn một lần trong effect khởi tạo
-  const pickRef = useRef({ pickFace, onPickFace, onCancelPick })
+  const pickRef = useRef({ pickFace, onPickFace, onCancelPick, onSelectPart })
   useEffect(() => {
-    pickRef.current = { pickFace, onPickFace, onCancelPick }
+    pickRef.current = { pickFace, onPickFace, onCancelPick, onSelectPart }
   })
 
   const fitCamera = () => {
@@ -218,16 +261,16 @@ export const StlViewer = forwardRef<StlViewerHandle, StlViewerProps>(function St
     controls.dampingFactor = 0.08
     controls.maxPolarAngle = Math.PI * 0.49
 
-    const material = new THREE.MeshPhysicalMaterial({ color, roughness: 0.5, clearcoat: 0.15, side: THREE.DoubleSide })
-    track(material)
+    const group = new THREE.Group()
+    scene.add(group)
     const bedRadius = Math.max(bed.x, bed.y, bed.z) * 0.75
     const ctx: Ctx = {
       renderer,
       scene,
       camera,
       controls,
-      mesh: null,
-      material,
+      group,
+      entries: new Map(),
       frame: 0,
       dirty: true,
       viewHeight: bed.z / 3,
@@ -236,7 +279,9 @@ export const StlViewer = forwardRef<StlViewerHandle, StlViewerProps>(function St
       hemi,
       highlight,
       hoverFace: -1,
+      hoverMesh: null,
       hoverNormal: new THREE.Vector3(),
+      viewKey: '',
     }
     ctxRef.current = ctx
     controls.addEventListener('change', () => (ctx.dirty = true))
@@ -263,26 +308,36 @@ export const StlViewer = forwardRef<StlViewerHandle, StlViewerProps>(function St
     const clearHover = () => {
       if (ctx.hoverFace === -1) return
       ctx.hoverFace = -1
+      ctx.hoverMesh = null
       highlight.visible = false
       ctx.dirty = true
     }
-    const hover = (e: PointerEvent) => {
-      if (!pickRef.current.pickFace || !ctx.mesh) return clearHover()
+    const raycast = (e: PointerEvent) => {
       const rect = renderer.domElement.getBoundingClientRect()
       ndc.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1)
       raycaster.setFromCamera(ndc, camera)
-      const hit = raycaster.intersectObject(ctx.mesh, false)[0]
+      return raycaster.intersectObjects(ctx.group.children, false)[0]
+    }
+    const hover = (e: PointerEvent) => {
+      if (!pickRef.current.pickFace || ctx.group.children.length === 0) return clearHover()
+      const hit = raycast(e)
       if (!hit || hit.faceIndex == null || !hit.face) return clearHover()
-      if (hit.faceIndex === ctx.hoverFace) return
-      // Pháp tuyến hướng ra ngoài = phía nhìn thấy được từ camera (không phụ thuộc winding của file)
+      const obj = hit.object as PartMesh
+      if (hit.faceIndex === ctx.hoverFace && obj === ctx.hoverMesh) return
+      // face.normal ở hệ toạ độ của món. Hướng ra ngoài = phía nhìn thấy được từ camera, so trong
+      // hệ thế giới (không phụ thuộc winding của file)
       const n = hit.face.normal.clone()
-      if (n.dot(raycaster.ray.direction) > 0) n.negate()
+      const world = n.clone().applyQuaternion(obj.quaternion)
+      if (world.dot(raycaster.ray.direction) > 0) n.negate()
       ctx.hoverFace = hit.faceIndex
+      ctx.hoverMesh = obj
       ctx.hoverNormal.copy(n)
-      const pos = ctx.mesh.geometry.getAttribute('position').array as Float32Array
+      const pos = obj.geometry.getAttribute('position').array as Float32Array
       highlight.geometry.dispose()
       highlight.geometry = new THREE.BufferGeometry()
       highlight.geometry.setAttribute('position', new THREE.BufferAttribute(planarRegion(pos, hit.faceIndex, n), 3))
+      highlight.position.copy(obj.position)
+      highlight.quaternion.copy(obj.quaternion)
       highlight.visible = true
       ctx.dirty = true
     }
@@ -290,13 +345,19 @@ export const StlViewer = forwardRef<StlViewerHandle, StlViewerProps>(function St
     const onUp = (e: PointerEvent) => {
       const start = downAt
       downAt = null
-      if (!pickRef.current.pickFace || !start || Math.hypot(e.clientX - start.x, e.clientY - start.y) > 6) return
+      if (!start || Math.hypot(e.clientX - start.x, e.clientY - start.y) > 6) return
+      if (!pickRef.current.pickFace) {
+        const id = raycast(e)?.object.userData.partId as string | undefined
+        if (id) pickRef.current.onSelectPart?.(id)
+        return
+      }
       hover(e) // chạm trên màn cảm ứng không có pointermove trước đó
-      if (ctx.hoverFace === -1) return
+      if (ctx.hoverFace === -1 || !ctx.hoverMesh) return
       const n = ctx.hoverNormal
       const down: Vec3 = [n.x, n.y, n.z]
+      const id = ctx.hoverMesh.userData.partId as string
       clearHover()
-      pickRef.current.onPickFace?.(down)
+      pickRef.current.onPickFace?.(id, down)
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && pickRef.current.pickFace) pickRef.current.onCancelPick?.()
@@ -331,7 +392,11 @@ export const StlViewer = forwardRef<StlViewerHandle, StlViewerProps>(function St
       ;(ctx.bed.grid.material as THREE.Material).dispose()
       observer.disconnect()
       controls.dispose()
-      ctx.mesh?.geometry.dispose()
+      for (const en of ctx.entries.values()) {
+        en.geometry.dispose()
+        en.material.dispose()
+      }
+      ctx.entries.clear()
       for (const d of disposables) d.dispose()
       renderer.dispose()
       renderer.domElement.remove()
@@ -341,38 +406,82 @@ export const StlViewer = forwardRef<StlViewerHandle, StlViewerProps>(function St
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bed.x, bed.y, bed.z])
 
-  // Thay geometry khi có file mới.
+  // Dựng lại các bản trên bàn khi đổi món, hướng in, vị trí xếp, món đang chọn hay màu.
   useEffect(() => {
     const ctx = ctxRef.current
     if (!ctx) return
     ctx.hoverFace = -1
+    ctx.hoverMesh = null
     ctx.highlight.visible = false
-    if (ctx.mesh) {
-      ctx.scene.remove(ctx.mesh)
-      ctx.mesh.geometry.dispose()
-      ctx.mesh = null
+    ctx.group.clear()
+
+    const keep = new Set<string>()
+    let instances = 0
+    let single: PartEntry | undefined
+    for (const part of parts) {
+      if (part.positions.length < 9) continue
+      keep.add(part.id)
+      let en = ctx.entries.get(part.id)
+      if (en && en.positions !== part.positions) {
+        en.geometry.dispose()
+        en.material.dispose()
+        en = undefined
+      }
+      if (!en) {
+        const geometry = new THREE.BufferGeometry()
+        geometry.setAttribute('position', new THREE.BufferAttribute(part.positions, 3))
+        geometry.computeVertexNormals()
+        geometry.computeBoundingSphere()
+        geometry.computeBoundingBox()
+        const material = new THREE.MeshPhysicalMaterial({ roughness: 0.5, clearcoat: 0.15, side: THREE.DoubleSide })
+        en = { positions: part.positions, geometry, material }
+        ctx.entries.set(part.id, en)
+      }
+      en.material.color.set(part.overflow ? OVERFLOW_COLOR : color)
+      en.material.emissive.set(part.selected ? SELECTED_EMISSIVE : 0x000000)
+      en.material.emissiveIntensity = part.selected ? 0.35 : 0
+      for (const p of part.placements ?? [null]) {
+        const mesh: PartMesh = new THREE.Mesh(en.geometry, en.material)
+        mesh.castShadow = true
+        mesh.receiveShadow = true
+        mesh.userData.partId = part.id
+        if (p) {
+          const t = placementTransform(p, bed)
+          mesh.position.set(t.x, 0, t.z)
+          mesh.rotation.y = t.rotY
+        }
+        ctx.group.add(mesh)
+        instances++
+        single = en
+      }
     }
+    for (const [id, en] of ctx.entries) {
+      if (keep.has(id)) continue
+      en.geometry.dispose()
+      en.material.dispose()
+      ctx.entries.delete(id)
+    }
+    ctx.dirty = true
+
+    // Góc nhìn: chỉ đặt lại khi đổi mesh hoặc chuyển giữa một bản / nhiều bản, không phải khi chọn món
+    const viewKey = parts.map((p) => `${p.id}:${positionsId(p.positions)}`).join('|') + (instances > 1 ? '*' : '')
+    if (viewKey === ctx.viewKey) return
+    ctx.viewKey = viewKey
     const bedRadius = Math.max(bed.x, bed.y, bed.z) * 0.75
-    if (positions && positions.length >= 9) {
-      const geometry = new THREE.BufferGeometry()
-      geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-      geometry.computeVertexNormals()
-      geometry.computeBoundingSphere()
-      geometry.computeBoundingBox()
-      ctx.mesh = new THREE.Mesh(geometry, ctx.material)
-      ctx.mesh.castShadow = true
-      ctx.mesh.receiveShadow = true
-      ctx.scene.add(ctx.mesh)
-      const sphere = geometry.boundingSphere!
+    if (instances === 1 && single) {
+      const sphere = single.geometry.boundingSphere!
       ctx.viewRadius = Math.max(sphere.radius * 1.5, Math.min(bedRadius, sphere.radius * 5), 22)
-      ctx.viewHeight = geometry.boundingBox!.max.y
+      ctx.viewHeight = single.geometry.boundingBox!.max.y
+    } else if (instances > 1) {
+      ctx.viewRadius = bedRadius
+      ctx.viewHeight = Math.max(bed.z / 3, ...[...ctx.entries.values()].map((en) => en.geometry.boundingBox!.max.y))
     } else {
       ctx.viewRadius = bedRadius
       ctx.viewHeight = bed.z / 3
     }
     fitCamera()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [positions])
+  }, [parts, color])
 
   // Đổi tông bàn in theo giao diện sáng/tối
   useEffect(() => {
@@ -403,14 +512,6 @@ export const StlViewer = forwardRef<StlViewerHandle, StlViewerProps>(function St
       ctx.dirty = true
     }
   }, [pickFace])
-
-  // Chỉ đổi màu, không tạo lại geometry.
-  useEffect(() => {
-    const ctx = ctxRef.current
-    if (!ctx) return
-    ctx.material.color.set(overflow ? OVERFLOW_COLOR : color)
-    ctx.dirty = true
-  }, [color, overflow])
 
   return <div ref={hostRef} className="h-full w-full touch-none" aria-label="Xem trước mô hình 3D trên bàn in" />
 })
