@@ -258,6 +258,45 @@ describe('arrangePlate', () => {
     expect(r.fits).toBe(false)
   })
 
+  it('a too-big item plus a small item: the small item is still placed', () => {
+    const inputs = [
+      { itemId: 'big', copies: 1, footprint: footprintOf(box(175, 175, 5)), height: 5 },
+      { itemId: 'small', copies: 3, footprint: footprintOf(box(20, 20, 10)), height: 10 },
+    ]
+    const r = arrangePlate(inputs, bed)
+    expect(r.fits).toBe(false)
+    expect(r.placements.small).toHaveLength(3)
+    expect(r.placements.big.length).toBeLessThan(1)
+    expect(arrangePlate(inputs, bed)).toEqual(r)
+  })
+
+  it('item A qty 1 fits, item B qty 200 does not: A is placed fully', () => {
+    const inputs = [
+      { itemId: 'A', copies: 1, footprint: footprintOf(box(30, 30, 10)), height: 10 },
+      { itemId: 'B', copies: 200, footprint: footprintOf(box(15, 15, 10)), height: 10 },
+    ]
+    const t0 = performance.now()
+    const r = arrangePlate(inputs, bed)
+    const ms = performance.now() - t0
+    expect(r.fits).toBe(false)
+    expect(r.placements.A).toHaveLength(1)
+    expect(r.placements.B.length).toBeLessThan(200)
+    expect(ms).toBeLessThan(700)
+  })
+
+  it('a later item that does not fit is the only one short; items after it are placed', () => {
+    const inputs = [
+      { itemId: 'a', copies: 1, footprint: footprintOf(box(100, 100, 5)), height: 5 },
+      { itemId: 'b', copies: 5, footprint: footprintOf(box(90, 90, 5)), height: 5 },
+      { itemId: 'c', copies: 2, footprint: footprintOf(box(10, 10, 5)), height: 5 },
+    ]
+    const r = arrangePlate(inputs, bed)
+    expect(r.fits).toBe(false)
+    expect(r.placements.a).toHaveLength(1)
+    expect(r.placements.b.length).toBeLessThan(5)
+    expect(r.placements.c).toHaveLength(2)
+  })
+
   it('nests shapes tighter than bounding boxes', () => {
     // right triangle with 120 mm legs: two bounding boxes need 245 mm, but rotated 180° into each other
     // the pair fits in about 120 + gap on the 174 mm usable bed
