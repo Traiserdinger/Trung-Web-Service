@@ -1,4 +1,4 @@
-import type { OrderItemRow, OrderRow } from './orderRepo.ts'
+import type { OrderFileRow, OrderItemRow, OrderRow } from './orderRepo.ts'
 
 // Port của formatMessage_ trong apps-script/Code.gs: dòng Drive đổi thành Admin, thêm dòng Màu.
 const TELEGRAM_MAX = 4000
@@ -36,7 +36,14 @@ function parse(s: string | null): Record<string, unknown> {
   }
 }
 
-export function formatOwnerMessage(o: OrderRow, adminUrl: string, items: OrderItemRow[]): string {
+const LARGE_FILE_BYTES = 35 * 1024 * 1024
+
+export function formatOwnerMessage(
+  o: OrderRow,
+  adminUrl: string,
+  items: OrderItemRow[],
+  files: Pick<OrderFileRow, 'role' | 'fileSize'>[] = [],
+): string {
   const s = parse(o.settings)
   const d = parse(o.dims)
   const est = o.estimate ? parse(o.estimate) : null
@@ -80,12 +87,14 @@ export function formatOwnerMessage(o: OrderRow, adminUrl: string, items: OrderIt
   for (const it of items) {
     lines.push(
       `#${it.itemNo} ${oneLine(it.name)} ×${it.quantity} · đặc ${r1(it.infillPercent)}% · ${r1(it.wallLoops)} vỏ` +
-        (it.support ? ' · support' : ''),
+        (it.support ? ' · support' : '') +
+        (it.scale !== 1 ? ' · inch×' + String(it.scale).replace('.', ',') : ''),
     )
   }
   if (items.length <= 1) lines.push(`Kích thước: ${r(d.length)} × ${r(d.width)} × ${r(d.height)} mm`)
   const scale = num(o.scale)
-  if (scale !== null && scale !== 1) {
+  // Đơn nhiều món: cờ inch nằm ở từng dòng món; dòng này chỉ cho đơn cũ không có món.
+  if (items.length === 0 && scale !== null && scale !== 1) {
     lines.push('⚠ File gốc tính bằng inch: khách đã nhân ×' + String(scale).replace('.', ',') + ' khi báo giá')
   }
 
@@ -99,7 +108,9 @@ export function formatOwnerMessage(o: OrderRow, adminUrl: string, items: OrderIt
   }
 
   if (o.fileDelivery === 'zalo') {
-    lines.push('📎 File lớn, khách sẽ gửi qua Zalo: ' + oneLine(o.fileName))
+    const sources = files.filter((f) => f.role === 'source')
+    const large = sources.length > 0 ? sources.some((f) => f.fileSize > LARGE_FILE_BYTES) : (num(o.fileSize) ?? 0) > LARGE_FILE_BYTES
+    lines.push('📎 ' + (large ? 'File lớn, khách' : 'Khách') + ' sẽ gửi file qua Zalo: ' + oneLine(o.fileName))
   } else {
     const size = num(o.fileSize)
     lines.push('File: ' + oneLine(o.fileName) + (size === null ? '' : ` (${(size / 1024 / 1024).toFixed(1)} MB)`))

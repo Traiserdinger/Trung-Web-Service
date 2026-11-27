@@ -79,4 +79,27 @@ describe('formatOwnerMessage', () => {
     expect(lines.filter((l) => l.startsWith('Drive:'))).toHaveLength(0)
     expect(lines.find((l) => l.startsWith('Nhựa '))).toBe('Nhựa PLA, lớp 0.2 mm')
   })
+
+  it('flags an item whose file is in inches', () => {
+    const it = (itemNo: number, scale: number): OrderItemRow => ({
+      orderCode: 'P3D-250101-ABCD', itemNo, fileNo: 1, name: `m${itemNo}`, dims: '{}', volume: 1, surfaceArea: 1, scale,
+      orient: null, infillPercent: 15, wallLoops: 2, support: 0, quantity: 1, placements: null, footprint: null,
+    })
+    const lines = formatOwnerMessage(row(), 'u', [it(1, 1), it(2, 25.4)]).split('\n')
+    expect(lines).toContain('#1 m1 ×1 · đặc 15% · 2 vỏ')
+    expect(lines).toContain('#2 m2 ×1 · đặc 15% · 2 vỏ · inch×25,4')
+  })
+
+  it('Zalo line: only mentions "File lớn" when a source is over 35 MB', () => {
+    const f = (fileSize: number) => ({
+      orderCode: 'P3D-250101-ABCD', fileNo: 1, role: 'source' as const, fileName: 'a.stl', fileSize, fileType: 'stl' as const,
+      fileDelivery: 'zalo' as const, fileStatus: 'zalo' as const, driveUrl: null,
+    })
+    const z = row({ fileDelivery: 'zalo', fileName: 'a.stl +10' })
+    const small = formatOwnerMessage(z, 'u', [], [f(1000)])
+    expect(small).toContain('📎 Khách sẽ gửi file qua Zalo: a.stl +10')
+    expect(small).not.toContain('File lớn')
+    const big = formatOwnerMessage(z, 'u', [], [f(36 * 1024 * 1024)])
+    expect(big).toContain('📎 File lớn, khách sẽ gửi file qua Zalo: a.stl +10')
+  })
 })

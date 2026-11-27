@@ -311,6 +311,16 @@ describe('arrangePlate', () => {
     expect(a.fits).toBe(true)
   })
 
+  it('reports 80 copies of a 15 mm box as not fitting, quickly and the same every time', () => {
+    const inputs = [{ itemId: 'a', copies: 80, footprint: footprintOf(box(15, 15, 10)), height: 10 }]
+    const t0 = performance.now()
+    const r = arrangePlate(inputs, bed)
+    // worst non-fitting case was ~800 ms; keep well clear of the 1000 ms clock backstop
+    expect(performance.now() - t0).toBeLessThan(700)
+    expect(r.fits).toBe(false)
+    expect(arrangePlate(inputs, bed).fits).toBe(false)
+  })
+
   it('fits ten items / thirty copies validly in under 1500 ms on the real clock', () => {
     const t0 = performance.now()
     const r = arrangePlate(tenItemsThirtyCopies, bed)

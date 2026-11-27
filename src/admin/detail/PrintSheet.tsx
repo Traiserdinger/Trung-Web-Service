@@ -126,7 +126,10 @@ export function PrintSheet({ order, files, items }: { order: OrderRow; files: Or
                   <td className={`${td} tnum`}>{it.infillPercent}%</td>
                   <td className={`${td} tnum`}>{it.wallLoops}</td>
                   <td className={td}>{it.support ? 'Có' : 'Không'}</td>
-                  <td className={`${td} tnum whitespace-nowrap`}>{dimsOf(it.dims)}</td>
+                  <td className={`${td} tnum whitespace-nowrap`}>
+                    {dimsOf(it.dims)}
+                    {it.scale !== 1 && <span className="ml-1 text-xs text-slate">inch×{String(it.scale).replace('.', ',')}</span>}
+                  </td>
                   <td className={td}>
                     {url ? (
                       <a href={url} target="_blank" rel="noreferrer" className="text-solder underline underline-offset-2">

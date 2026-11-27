@@ -103,7 +103,7 @@ export const slicerConfig = {
   /** Ngân sách thời gian xếp bàn, ms */
   arrangeBudgetMs: 1000,
   /** Ngân sách công việc xếp bàn: số vị trí thử tối đa cho mỗi cách xếp (kết quả không phụ thuộc tốc độ máy) */
-  arrangeWorkBudget: 12_000_000,
+  arrangeWorkBudget: 1_000_000,
 }
 export type SlicerConfig = typeof slicerConfig
 

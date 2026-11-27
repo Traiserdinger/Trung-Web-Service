@@ -13,6 +13,9 @@ import { hit, unhit } from '../shared/rateLimit.ts'
 const MAX_FILE_BYTES = 35 * 1024 * 1024
 const MAX_ITEMS = 10
 const MAX_SOURCES = 10
+// Đơn tư vấn toàn file Zalo (quá 10 món) không tải gì lên: nới giới hạn, body 256 KB vẫn chặn trên.
+const MAX_CONSULT_ITEMS = 50
+const STALE_TAB = 'Trang web vừa cập nhật, vui lòng tải lại trang rồi gửi lại'
 const MAX_QUANTITY = 50
 const MAX_FOOTPRINT_POINTS = 32
 const MAX_BODY_BYTES = 256_000
@@ -28,7 +31,7 @@ const fail = (error: string) => json({ ok: false, error })
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
 
-function validateFiles(files: unknown): string | null {
+function validateFiles(files: unknown, maxSources: number): string | null {
   if (!Array.isArray(files)) return BAD
   const nos = new Set<number>()
   let sources = 0
@@ -53,13 +56,13 @@ function validateFiles(files: unknown): string | null {
       if (f.role === 'source') uploadSum += f.fileSize
     }
   }
-  if (sources < 1 || sources > MAX_SOURCES || plates > 1) return BAD
+  if (sources < 1 || sources > maxSources || plates > 1) return BAD
   if (uploadSum > MAX_FILE_BYTES) return 'Tổng file lớn hơn 35MB, vui lòng gửi qua Zalo'
   return null
 }
 
-function validateItems(items: unknown, files: OrderMetaFile[]): string | null {
-  if (!Array.isArray(items) || items.length < 1 || items.length > MAX_ITEMS) return BAD
+function validateItems(items: unknown, files: OrderMetaFile[], maxItems: number): string | null {
+  if (!Array.isArray(items) || items.length < 1 || items.length > maxItems) return BAD
   const sourceNos = new Set(files.filter((f) => f.role === 'source').map((f) => f.fileNo))
   const nos = new Set<number>()
   for (const it of items as Partial<OrderMetaItem>[]) {
@@ -94,6 +97,8 @@ function validateItems(items: unknown, files: OrderMetaFile[]): string | null {
 
 function validate(p: Partial<OrderMeta> | null): string | null {
   if (!p || typeof p !== 'object') return BAD
+  // Tab mở từ trước khi cập nhật gửi dạng cũ (một file, không có files/items).
+  if ('fileName' in p && !('files' in p)) return STALE_TAB
   if (typeof p.orderCode !== 'string' || !CODE_RE.test(p.orderCode)) return 'Mã đơn không hợp lệ'
   if (p.orderType !== 'quote' && p.orderType !== 'consult') return BAD
   const c = p.customer
@@ -104,9 +109,13 @@ function validate(p: Partial<OrderMeta> | null): string | null {
   if (!Number.isInteger(p.colorId)) return BAD
   const sh = p.shared as Record<string, unknown> | undefined
   if (!isObj(sh) || typeof sh.material !== 'string' || !isNum(sh.layerHeight)) return BAD
-  const filesErr = validateFiles(p.files)
+  const many =
+    p.orderType === 'consult' &&
+    Array.isArray(p.files) &&
+    (p.files as Partial<OrderMetaFile>[]).every((f) => isObj(f) && (f.role === 'plate' || f.fileDelivery === 'zalo'))
+  const filesErr = validateFiles(p.files, many ? MAX_CONSULT_ITEMS : MAX_SOURCES)
   if (filesErr) return filesErr
-  return validateItems(p.items, p.files as OrderMetaFile[])
+  return validateItems(p.items, p.files as OrderMetaFile[], many ? MAX_CONSULT_ITEMS : MAX_ITEMS)
 }
 
 async function verifyTurnstile(secret: string, token: string | null): Promise<boolean> {
@@ -168,7 +177,7 @@ export async function handleCreateOrder(req: Request, env: Env, ctx: ExecutionCo
     shared,
     customer,
     m.colorId,
-    files.map((f) => [f.fileName, f.fileSize, f.fileType, f.fileDelivery, f.role]),
+    sources.map((f) => [f.fileName, f.fileSize, f.fileType, f.fileDelivery, f.role]),
     items.map((i) => [i.itemNo, i.fileNo, i.name, i.scale, i.orient, i.infillPercent, i.wallLoops, i.support, i.quantity]),
   ])
   const trackUrl = `${stripSlash(env.PUBLIC_SITE_URL)}/tra-cuu?ma=${code}`
@@ -276,7 +285,7 @@ export async function handleCreateOrder(req: Request, env: Env, ctx: ExecutionCo
   }
 
   const adminUrl = env.ADMIN_SITE_URL ? `${stripSlash(env.ADMIN_SITE_URL)}/#/orders/${code}` : '(chưa cấu hình)'
-  const text = formatOwnerMessage(row, adminUrl, itemRows)
+  const text = formatOwnerMessage(row, adminUrl, itemRows, fileRows)
   // Bản preview (APPS_SCRIPT_URL rỗng): không báo chủ shop qua Telegram hay email.
   if (!preview)
     ctx.waitUntil(

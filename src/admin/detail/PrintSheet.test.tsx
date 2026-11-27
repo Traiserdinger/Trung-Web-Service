@@ -36,6 +36,13 @@ it('renders a row per item with Drive links', () => {
   expect(screen.getByRole('link', { name: 'Tải file bàn in .3mf' })).toHaveAttribute('href', 'https://drive.google.com/plate')
 })
 
+it('flags an inch item next to its dimensions', () => {
+  render(<PrintSheet order={order} files={[file({})]} items={[item({}), item({ itemNo: 2, scale: 25.4 })]} />)
+  const rows = screen.getAllByRole('row').slice(1)
+  expect(within(rows[0]).queryByText(/inch/)).toBeNull()
+  expect(within(rows[1]).getByText('inch×25,4')).toBeInTheDocument()
+})
+
 it('draws one hull per placement with item numbers', () => {
   const { container } = render(<PrintSheet order={order} files={[file({})]} items={[item({ placements: pl, footprint: sq })]} />)
   expect(container.querySelectorAll('svg polygon[data-hull]')).toHaveLength(2)

@@ -346,6 +346,30 @@ describe('OrderForm', () => {
     expect(submit.mock.calls[0][1].size).toBe(0)
   })
 
+  it('an 11-item consult order is sent: every source on Zalo, no blobs, no plate', async () => {
+    const ids = Array.from({ length: 11 }, (_, i) => i + 1)
+    const items = ids.map((n) => plateItem(n, `p${n}.stl`))
+    const buildPlate = vi.fn(async () => bytesOf(10))
+    const submit = vi.fn(async (p: OrderMeta, _b: Map<number, Blob>) => okResult(p))
+    setup(submit, {
+      quote: { ...consultQuote, consultReasons: ['Quá 10 món'] },
+      files: ids.map((n) => plateFile(n, `p${n}.stl`)),
+      items,
+      arrangement: arrangedFor(items),
+      buildPlate,
+    })
+    await fillValid()
+    await userEvent.click(screen.getByRole('button', { name: 'Gửi đơn' }))
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1))
+    const meta = submit.mock.calls[0][0]
+    expect(meta.orderType).toBe('consult')
+    expect(meta.items).toHaveLength(11)
+    expect(meta.files).toHaveLength(11)
+    expect(meta.files.every((f) => f.role === 'source' && f.fileDelivery === 'zalo')).toBe(true)
+    expect(submit.mock.calls[0][1].size).toBe(0)
+    expect(buildPlate).not.toHaveBeenCalled()
+  })
+
   it('sends null placements and no plate when the arrangement is stale for the quantity', async () => {
     const items = [plateItem(1)]
     items[0].settings.quantity = 3

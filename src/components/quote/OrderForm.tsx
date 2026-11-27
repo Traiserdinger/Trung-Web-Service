@@ -333,7 +333,7 @@ export function OrderForm({
           </div>
         )}
         <div className="mt-5 flex flex-wrap items-center gap-3">
-          <ZaloButton light>{zalo ?'Gửi file qua Zalo' : 'Nhắn Zalo cho Trung'}</ZaloButton>
+          <ZaloButton light>{zalo ? 'Gửi file qua Zalo' : 'Nhắn Zalo cho Trung'}</ZaloButton>
           <a
             href={trackHref}
             className="rounded-full border border-white/40 px-5 py-2.5 text-[14px] font-semibold text-white transition-colors hover:border-white"

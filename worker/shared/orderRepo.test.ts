@@ -58,6 +58,40 @@ describe('migration 0003', () => {
   })
 })
 
+describe('migration 0004', () => {
+  it('backfills an order written after 0003 without child rows, and leaves the others alone', async () => {
+    const db = createFakeD1({ upTo: '0003' })
+    // đơn có đủ file/món (ghi bởi bản mới)
+    await insertOrder(db, row(), twoSourcesAndPlate(), [item(1, 1), item(2, 2)])
+    // đơn do bản Worker cũ ghi sau 0003: chỉ có dòng orders
+    await db
+      .prepare(
+        `INSERT INTO orders (code, created_at, order_type, customer_name, customer_phone, settings, dims, volume,
+          surface_area, scale, file_name, file_size, file_delivery, file_status, status, status_updated_at)
+         VALUES ('P3D-250101-LATE', '2025-01-01T00:00:00.000Z', 'quote', 'B', '0913014605', ?, '{"x":1}', 7, 8, 1,
+          'late.stl', 55, 'upload', 'pending', 'received', 'x')`,
+      )
+      .bind('{"infillPercent":30,"wallLoops":3,"support":false,"quantity":2}')
+      .run()
+    expect(await listOrderFiles(db, 'P3D-250101-LATE')).toHaveLength(0)
+    applyMigration(db, '0004')
+    expect(await listOrderFiles(db, 'P3D-250101-LATE')).toEqual([
+      { orderCode: 'P3D-250101-LATE', fileNo: 1, role: 'source', fileName: 'late.stl', fileSize: 55, fileType: 'stl',
+        fileDelivery: 'upload', fileStatus: 'pending', driveUrl: null },
+    ])
+    expect(await listOrderItems(db, 'P3D-250101-LATE')).toMatchObject([
+      { itemNo: 1, fileNo: 1, name: 'late.stl', infillPercent: 30, wallLoops: 3, support: 0, quantity: 2 },
+    ])
+    // đơn đã có dòng: giữ nguyên
+    expect((await listOrderFiles(db, CODE)).map((f) => f.fileNo)).toEqual([0, 1, 2])
+    expect((await listOrderItems(db, CODE)).map((i) => i.itemNo)).toEqual([1, 2])
+    // chạy lại lần nữa: không trùng
+    applyMigration(db, '0004')
+    expect(await listOrderFiles(db, 'P3D-250101-LATE')).toHaveLength(1)
+    expect(await listOrderItems(db, 'P3D-250101-LATE')).toHaveLength(1)
+  })
+})
+
 describe('orderRepo multi-file', () => {
   it('insertOrder writes files and items', async () => {
     const db = createFakeD1()

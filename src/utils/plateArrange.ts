@@ -676,7 +676,7 @@ function pack(ctx: PackContext, mode: Mode): PackResult {
     const { input } = item
     if (item.rotations.length === 0) {
       fits = false
-      continue
+      return { fits, placed, placements }
     }
     const h = input.height
     for (let copy = 0; copy < input.copies; copy++) {
@@ -792,8 +792,10 @@ function pack(ctx: PackContext, mode: Mode): PackResult {
 
       const chosen = best as Candidate | null
       if (!chosen) {
+        // One copy has nowhere to go, so the plate cannot hold everything. Stop here instead of
+        // scanning the whole bed again for every remaining copy; the placements are not used.
         fits = false
-        continue
+        return { fits, placed, placements }
       }
       const rot = item.rotations[chosen.r]
       if (item.tall) {

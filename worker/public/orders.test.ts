@@ -319,10 +319,58 @@ describe('POST /api/orders', () => {
     expect(JSON.parse(tg()[0].body).text).toContain('#2 m2.stl ×1 · đặc 15% · 2 vỏ')
   })
 
-  it('rejects 11 items', async () => {
+  it('rejects a quote order with 11 items', async () => {
     const env = makeEnv(full)
     const items = Array.from({ length: 11 }, (_, i) => item(i + 1, 1))
     expect((await post(env, meta({ items }))).body.ok).toBe(false)
+  })
+
+  const many = (n: number, over: Partial<OrderMeta> = {}, delivery: 'zalo' | 'upload' = 'zalo') =>
+    meta({
+      orderType: 'consult',
+      consultReasons: ['Quá 10 món'],
+      files: Array.from({ length: n }, (_, i) => src(i + 1, { fileSize: 1000, fileDelivery: delivery })),
+      items: Array.from({ length: n }, (_, i) => item(i + 1, i + 1)),
+      ...over,
+    })
+
+  it('accepts a consult order with 11 zalo items (up to 50)', async () => {
+    const env = makeEnv(full)
+    const { body } = await post(env, many(11))
+    expect(body).toMatchObject({ ok: true, uploads: [], fileStatus: 'zalo' })
+    expect(await listOrderItems(env.DB, 'P3D-250101-ABCD')).toHaveLength(11)
+    expect((await post(makeEnv(full), many(50))).body.ok).toBe(true)
+    expect((await post(makeEnv(full), many(51))).body.ok).toBe(false)
+  })
+
+  it('keeps the 10 limit for consult orders that upload files, and for quote orders', async () => {
+    expect((await post(makeEnv(full), many(11, {}, 'upload'))).body.ok).toBe(false)
+    expect((await post(makeEnv(full), many(11, { orderType: 'quote' }))).body.ok).toBe(false)
+  })
+
+  it('legacy payload from an old tab: asks for a reload', async () => {
+    const { body } = await post(makeEnv(full), {
+      ...meta(), files: undefined, items: undefined, fileName: 'a.stl', fileSize: 10, fileDelivery: 'upload',
+    })
+    expect(body).toEqual({ ok: false, error: 'Trang web vừa cập nhật, vui lòng tải lại trang rồi gửi lại' })
+  })
+
+  it('fingerprint ignores the plate file (size or presence)', async () => {
+    const env = makeEnv(full)
+    await post(env, two())
+    const sized = await post(env, two({ files: [src(1), src(2), plate({ fileSize: 9999 })] }))
+    expect(sized.body.ok).toBe(true)
+    const none = await post(env, two({ files: [src(1), src(2)] }))
+    expect(none.body.ok).toBe(true)
+    // a changed source file is still a different order
+    expect((await post(env, two({ files: [src(1), src(2, { fileSize: 7 }), plate()] }))).body.ok).toBe(false)
+  })
+
+  it('owner message: Zalo line says why only when a file is large', async () => {
+    const env = makeEnv(full)
+    await post(env, many(11))
+    expect(JSON.parse(tg()[0].body).text).toContain('📎 Khách sẽ gửi file qua Zalo')
+    expect(JSON.parse(tg()[0].body).text).not.toContain('File lớn')
   })
 
   it('rejects item pointing to unknown file', async () => {
