@@ -27,5 +27,5 @@ export function computeQuoteState(stats: MeshStats, s: PrintSettings, platesOver
   if (reasons.length > 0) return { orderType: 'consult', consultReasons: reasons, estimate: null, price: null }
 
   const estimate = estimatePrint(stats, s, undefined, undefined, platesOverride)
-  return { orderType: 'quote', consultReasons: [], estimate, price: priceQuote(estimate, materials[s.material]) }
+  return { orderType: 'quote', consultReasons: [], estimate, price: priceQuote(estimate, materials[s.material], s.layerHeight) }
 }

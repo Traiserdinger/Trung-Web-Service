@@ -55,7 +55,7 @@ export function computePlateState(a: {
   }
 
   const estimate = estimatePlate(items, shared)
-  const price = priceCombined(estimate, m, items.length)
+  const price = priceCombined(estimate, m, items.length, shared.layerHeight)
 
   let separateTotal: number | null = 0
   for (const it of items) {

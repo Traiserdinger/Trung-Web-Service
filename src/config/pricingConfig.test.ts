@@ -9,11 +9,13 @@ describe('pricingConfig', () => {
     expect(printerConfig.bed).toEqual({ x: 180, y: 180, z: 180 })
     expect(pricingRules).toMatchObject({
       freeMinutes: 30,
-      blockMinutes: 30,
-      pricePerBlock: 1850,
+      timeRatePerHour: 5000,
       minimumOrder: 20000,
       safetyMargin: 1.05,
+      layerQuality: { 0.08: 1.3, 0.12: 1.2, 0.16: 1.12, 0.2: 1, 0.28: 0.9 },
     })
+    expect(uiOptions.layerHeights.map((l) => l.value)).toEqual([0.08, 0.12, 0.16, 0.2, 0.28])
+    for (const m of Object.values(materials)) expect(m.flowRate[0.08]).toBeGreaterThan(0)
     expect(fileLimits.uploadMaxBytes).toBe(35 * 1024 * 1024)
     expect(uiOptions.defaults.material).toBe('PETG')
   })

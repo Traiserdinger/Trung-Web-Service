@@ -2,7 +2,7 @@
 // Trung tự sửa file này để đổi giá / hiệu chỉnh — không cần đụng code giao diện.
 
 export type MaterialId = 'PLA' | 'PETG' | 'TPU' | 'ABS'
-export type LayerHeight = 0.12 | 0.16 | 0.2 | 0.28
+export type LayerHeight = 0.08 | 0.12 | 0.16 | 0.2 | 0.28
 
 export interface MaterialConfig {
   id: MaterialId
@@ -38,7 +38,7 @@ export const materials: Record<MaterialId, MaterialConfig> = {
     pricePerGram: 450, // tạm, chỉnh sau
     color: '#eef0ee',
     contactOnly: false,
-    flowRate: { 0.12: 9, 0.16: 12, 0.2: 15, 0.28: 18 },
+    flowRate: { 0.08: 6, 0.12: 9, 0.16: 12, 0.2: 15, 0.28: 18 },
   },
   PETG: {
     id: 'PETG',
@@ -47,7 +47,7 @@ export const materials: Record<MaterialId, MaterialConfig> = {
     pricePerGram: 450,
     color: '#38bdf8',
     contactOnly: false,
-    flowRate: { 0.12: 7, 0.16: 9, 0.2: 11, 0.28: 13 },
+    flowRate: { 0.08: 5, 0.12: 7, 0.16: 9, 0.2: 11, 0.28: 13 },
   },
   TPU: {
     id: 'TPU',
@@ -56,7 +56,7 @@ export const materials: Record<MaterialId, MaterialConfig> = {
     pricePerGram: 450, // tạm, chỉnh sau
     color: '#a3e635',
     contactOnly: false,
-    flowRate: { 0.12: 2.5, 0.16: 3, 0.2: 3, 0.28: 3.5 },
+    flowRate: { 0.08: 2, 0.12: 2.5, 0.16: 3, 0.2: 3, 0.28: 3.5 },
   },
   ABS: {
     id: 'ABS',
@@ -65,7 +65,7 @@ export const materials: Record<MaterialId, MaterialConfig> = {
     pricePerGram: null,
     color: '#fb923c',
     contactOnly: true, // A1 Mini khung hở – không in ABS tự động
-    flowRate: { 0.12: 9, 0.16: 12, 0.2: 15, 0.28: 18 },
+    flowRate: { 0.08: 6, 0.12: 9, 0.16: 12, 0.2: 15, 0.28: 18 },
   },
 }
 
@@ -108,18 +108,19 @@ export const slicerConfig = {
 export type SlicerConfig = typeof slicerConfig
 
 export const pricingRules = {
-  /** Không tính phí thời gian nếu in ≤ số phút này */
+  /** In ≤ số phút này thì không tính phí thời gian */
   freeMinutes: 30,
-  blockMinutes: 30,
-  /** VNĐ cho mỗi block 30 phút trọn vẹn (7.400đ / 2 giờ) */
-  pricePerBlock: 1850,
+  /** Phí thời gian: VNĐ cho mỗi giờ in, tính theo phút cho toàn bộ thời gian in (khi in lâu hơn freeMinutes) */
+  timeRatePerHour: 5000,
+  /** Hệ số giá theo chiều cao lớp (lớp mịn in lâu hơn, canh máy nhiều hơn). 1 = giá gốc */
+  layerQuality: { 0.08: 1.3, 0.12: 1.2, 0.16: 1.12, 0.2: 1, 0.28: 0.9 } as Record<LayerHeight, number>,
   /** Giá tối thiểu mỗi đơn, VNĐ */
   minimumOrder: 20000,
   /** Khoảng giá hiển thị ±% */
   rangePercent: 20,
   /** Hệ số an toàn để giá tạm tính hơi nghiêng lên (1.0 = tắt) */
   safetyMargin: 1.05,
-  /** Làm tròn giá theo bội số này, VNĐ */
+  /** Làm tròn giá về bội số gần nhất này, VNĐ (lẻ dưới một nửa thì xuống, từ một nửa trở lên thì lên) */
   roundTo: 1000,
   /** Phí cộng thêm cho mỗi món từ món thứ 2 (sau hệ số an toàn), VNĐ */
   perItemFee: 3500,
@@ -149,6 +150,7 @@ export const uiOptions: {
   }
 } = {
   layerHeights: [
+    { value: 0.08, label: 'Siêu mịn' },
     { value: 0.12, label: 'Mịn' },
     { value: 0.16, label: 'Chi tiết' },
     { value: 0.2, label: 'Tiêu chuẩn' },
