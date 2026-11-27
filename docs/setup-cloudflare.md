@@ -224,7 +224,7 @@ Cần biết:
 Bản này đổi cả Apps Script, cơ sở dữ liệu (migration `0003`, `0004`) và hai Worker. Làm **đúng thứ tự** để đơn đang gửi dở không bị lỗi:
 
 1. **Deploy phiên bản Apps Script mới trước** (xem [`setup-apps-script.md`](setup-apps-script.md)). Bản mới nhận cả vé cũ lẫn vé mới nên làm trước thì không ảnh hưởng gì.
-2. **Chạy migration D1 rồi deploy Worker công khai**: `npm run deploy` (migration `0003` tạo bảng file/món và chuyển đơn cũ, `0004` bổ sung cho đơn nào lọt giữa hai bước). Giao diện khách (front-end) được phát hành cùng Worker công khai ở bước này.
+2. **Chạy migration D1 rồi deploy Worker công khai**: `npm run deploy` (migration `0003` tạo bảng file/món và chuyển đơn cũ, `0004` chạy lại phép chuyển đó). Đơn nào Worker cũ còn ghi sau migration thì Worker mới tự bổ sung dòng file/món còn thiếu ngay lần đầu đơn đó được dùng đến (khi file lưu xong hoặc khi mở trong admin). Giao diện khách (front-end) được phát hành cùng Worker công khai ở bước này.
 3. **Deploy Worker admin sau cùng**: `npm run deploy:admin`, chỉ khi migration `0003` đã chạy xong. Trang admin mới đọc bảng file/món nên deploy trước migration sẽ lỗi.
 4. Khách đang mở tab cũ sẽ thấy "Trang web vừa cập nhật, vui lòng tải lại trang rồi gửi lại": bảo họ tải lại trang là được.
 

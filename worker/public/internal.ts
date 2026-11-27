@@ -1,7 +1,7 @@
 import type { Env } from '../shared/env.ts'
 import { verifyEnvelope } from '../shared/hmac.ts'
 import { json, readJson } from '../shared/http.ts'
-import { getOrder, setFileSaved } from '../shared/orderRepo.ts'
+import { ensureOrderChildren, getOrder, setFileSaved } from '../shared/orderRepo.ts'
 
 // Apps Script gọi về sau khi lưu file lên Drive.
 export async function handleInternalFile(req: Request, env: Env): Promise<Response> {
@@ -15,6 +15,7 @@ export async function handleInternalFile(req: Request, env: Env): Promise<Respon
   const fileUrl = d.fileUrl === undefined ? d.driveUrl : d.fileUrl
   if (typeof fileUrl !== 'string') return json({ ok: false }, 400)
   if (!(await getOrder(env.DB, d.orderCode))) return json({ ok: false }, 404)
+  await ensureOrderChildren(env.DB, d.orderCode)
   await setFileSaved(env.DB, d.orderCode, fileNo, fileUrl, d.driveUrl)
   return json({ ok: true })
 }

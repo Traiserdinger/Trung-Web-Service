@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import { applyMigration, createFakeD1 } from '../test/fakeD1.ts'
 import {
-  aggregateFileStatus, deleteOrder, getOrder, insertOrder, listOrderFiles, listOrderItems, setFileSaved,
+  aggregateFileStatus, deleteOrder, ensureOrderChildren, getOrder, insertOrder, listOrderFiles, listOrderItems, setFileSaved,
   type OrderFileRow, type OrderItemRow, type OrderRow,
 } from './orderRepo.ts'
 
@@ -161,5 +161,31 @@ describe('aggregateFileStatus', () => {
     expect(aggregateFileStatus([f('source', 'saved'), f('source', 'pending'), f('plate', 'saved')])).toBe('pending')
     expect(aggregateFileStatus([f('source', 'zalo', 'zalo'), f('source', 'zalo', 'zalo')])).toBe('zalo')
     expect(aggregateFileStatus([f('plate', 'pending')])).toBe('saved')
+  })
+})
+
+describe('ensureOrderChildren', () => {
+  it('đơn chỉ có cột cũ → thêm 1 file nguồn + 1 món; gọi lại không nhân đôi', async () => {
+    const db = createFakeD1()
+    await insertOrder(db, row({ settings: '{"infillPercent":35,"wallLoops":4,"support":true,"quantity":3}', dims: '{"x":1}', volume: 7 }))
+    expect(await listOrderFiles(db, CODE)).toHaveLength(0)
+    await ensureOrderChildren(db, CODE)
+    await ensureOrderChildren(db, CODE)
+    const files = await listOrderFiles(db, CODE)
+    expect(files).toHaveLength(1)
+    expect(files[0]).toMatchObject({ fileNo: 1, role: 'source', fileName: 'a.stl', fileStatus: 'pending' })
+    const items = await listOrderItems(db, CODE)
+    expect(items).toHaveLength(1)
+    expect(items[0]).toMatchObject({ itemNo: 1, fileNo: 1, infillPercent: 35, wallLoops: 4, quantity: 3 })
+  })
+
+  it('đơn đã có file/món thì không đụng tới; đơn khác không bị ảnh hưởng', async () => {
+    const db = createFakeD1()
+    await insertOrder(db, row(), twoSourcesAndPlate(), [item(1, 1), item(2, 2)])
+    await insertOrder(db, row({ code: 'P3D-250101-ZZZZ' }))
+    await ensureOrderChildren(db, CODE)
+    expect(await listOrderFiles(db, CODE)).toHaveLength(3)
+    expect(await listOrderItems(db, CODE)).toHaveLength(2)
+    expect(await listOrderFiles(db, 'P3D-250101-ZZZZ')).toHaveLength(0)
   })
 })

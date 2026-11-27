@@ -180,6 +180,40 @@ export async function listOrderItems(db: D1Database, code: string): Promise<Orde
   return results
 }
 
+// Đơn do Worker bản cũ ghi lúc chuyển đổi giữa hai bản phát hành chưa có dòng file/món (migration chạy
+// trước khi Worker mới thay thế). Bổ sung theo từng đơn, cùng phép chuyển như migration 0003/0004:
+// 1 file nguồn + 1 món. Đơn đã có dòng thì bỏ qua nên gọi lại bao nhiêu lần cũng an toàn.
+export async function ensureOrderChildren(db: D1Database, code: string): Promise<void> {
+  await db.batch([
+    db
+      .prepare(
+        `INSERT INTO order_files
+          (order_code, file_no, role, file_name, file_size, file_type, file_delivery, file_status, drive_url)
+         SELECT code, 1, 'source', COALESCE(file_name, 'model.stl'), COALESCE(file_size, 0), 'stl',
+          COALESCE(file_delivery, 'upload'), COALESCE(file_status, 'pending'), drive_url
+         FROM orders
+         WHERE code = ? AND NOT EXISTS (SELECT 1 FROM order_files f WHERE f.order_code = orders.code)`,
+      )
+      .bind(code),
+    db
+      .prepare(
+        `INSERT INTO order_items
+          (order_code, item_no, file_no, name, dims, volume, surface_area, scale, orient,
+           infill_percent, wall_loops, support, quantity, placements, footprint)
+         SELECT code, 1, 1, COALESCE(file_name, 'model.stl'), COALESCE(dims, 'null'), COALESCE(volume, 0),
+          COALESCE(surface_area, 0), COALESCE(scale, 1), NULL,
+          COALESCE(CASE WHEN json_valid(settings) THEN json_extract(settings, '$.infillPercent') END, 20),
+          COALESCE(CASE WHEN json_valid(settings) THEN json_extract(settings, '$.wallLoops') END, 2),
+          COALESCE(CASE WHEN json_valid(settings) THEN json_extract(settings, '$.support') END, 0),
+          COALESCE(CASE WHEN json_valid(settings) THEN json_extract(settings, '$.quantity') END, 1),
+          NULL, NULL
+         FROM orders
+         WHERE code = ? AND NOT EXISTS (SELECT 1 FROM order_items i WHERE i.order_code = orders.code)`,
+      )
+      .bind(code),
+  ])
+}
+
 // Đánh dấu một file đã lưu Drive, đặt URL thư mục và tính lại trạng thái tổng hợp của đơn.
 // Cả hai câu lệnh chạy trong một batch và câu thứ hai tính trạng thái từ order_files ngay trong SQL,
 // nên hai lần gọi gần như cùng lúc không thể để orders.file_status cũ (định nghĩa mẫu: aggregateFileStatus).

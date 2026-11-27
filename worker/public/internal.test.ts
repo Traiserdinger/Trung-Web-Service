@@ -84,4 +84,14 @@ describe('POST /api/internal/file', () => {
     expect((await post(env, none)).status).toBe(200)
     expect((await getOrder(env.DB, row.code))?.fileStatus).toBe('pending')
   })
+
+  it('đơn do Worker cũ ghi (không có dòng file/món): fileSaved không fileNo vẫn đánh dấu saved', async () => {
+    const env = makeEnv()
+    await insertOrder(env.DB, row)
+    expect(await listOrderFiles(env.DB, row.code)).toHaveLength(0)
+    const e = await signEnvelope('s', 'fileSaved', { orderCode: row.code, driveUrl: 'https://drive/x' })
+    expect(await (await post(env, e)).json()).toEqual({ ok: true })
+    expect((await listOrderFiles(env.DB, row.code))[0]).toMatchObject({ fileNo: 1, fileStatus: 'saved' })
+    expect((await getOrder(env.DB, row.code))?.fileStatus).toBe('saved')
+  })
 })

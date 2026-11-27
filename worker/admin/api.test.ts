@@ -240,6 +240,18 @@ describe('danh sách', () => {
 })
 
 describe('chi tiết đơn nhiều file', () => {
+  it('admin detail của đơn cũ chưa có file/món: tự bổ sung 1 file + 1 món', async () => {
+    const env = adminEnv()
+    await insertOrder(env.DB, row({ fileName: 'old.stl', fileSize: 9, fileDelivery: 'upload', fileStatus: 'pending' }))
+    const { res, body } = await call(env, 'GET', `/api/orders/${CODE}`)
+    expect(res.status).toBe(200)
+    expect(body!.files).toHaveLength(1)
+    expect(body!.items).toHaveLength(1)
+    const again = await call(env, 'GET', `/api/orders/${CODE}`)
+    expect(again.body!.files).toHaveLength(1)
+    expect(again.body!.items).toHaveLength(1)
+  })
+
   it('admin detail returns files and items', async () => {
     const env = adminEnv()
     const f: OrderFileRow = {
