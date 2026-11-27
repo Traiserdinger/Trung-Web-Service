@@ -137,7 +137,9 @@ export function OptionsPanel({ value, onChange, supportReason, disabled, colors,
       </Group>
 
       {itemCaption && (
-        <p className="-mb-2 border-t border-dashed border-mist pt-5 text-[13px] font-semibold text-solder">{itemCaption}</p>
+        <p className="border-t border-dashed border-mist pt-5 text-[13px] leading-[1.4] font-semibold break-words text-solder">
+          {itemCaption}
+        </p>
       )}
 
       <div className="grid gap-6 sm:grid-cols-2">
