@@ -182,13 +182,16 @@ export function usePlateItems() {
 
   const removeItem = useCallback(
     (id: string) => {
+      // itemsRef cập nhật ngay (không đợi render) để hai lần xoá liên tiếp cùng một nhịp đều thấy kết quả của nhau
       const cur = itemsRef.current
       const gone = cur.find((it) => it.id === id)
       if (!gone) return
       const rest = cur.filter((it) => it.id !== id)
+      itemsRef.current = rest
       itemReq.current.delete(id)
-      setItems(rest)
-      if (!rest.some((it) => it.fileNo === gone.fileNo)) setFiles((fs) => fs.filter((f) => f.fileNo !== gone.fileNo))
+      const fileGone = !rest.some((it) => it.fileNo === gone.fileNo)
+      setItems((its) => its.filter((it) => it.id !== id))
+      if (fileGone) setFiles((fs) => fs.filter((f) => f.fileNo !== gone.fileNo))
       if (rest.length === 0) nextFileNo.current = 1
       setSelectedId((sel) => (sel === id ? (rest[Math.max(0, cur.indexOf(gone) - 1)]?.id ?? null) : sel))
       bump()

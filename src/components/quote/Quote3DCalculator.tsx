@@ -182,8 +182,6 @@ export function Quote3DCalculator({ loadColors = fetchColors }: { loadColors?: (
     ? { ...shared, ...selected.settings }
     : { ...shared, infillPercent: uiOptions.defaults.infillPercent, wallLoops: uiOptions.defaults.wallLoops, quantity: 1, support: false }
   const prefix = (it: PlateItem) => (many ? `${it.name}: ` : '')
-  const first = items[0] ?? null
-  const firstFile = first ? files.find((f) => f.fileNo === first.fileNo) : undefined
   const locked = busy || sending
 
   return (
@@ -215,7 +213,7 @@ export function Quote3DCalculator({ loadColors = fetchColors }: { loadColors?: (
               {selected && (
                 <div className="absolute top-4 right-4 left-4 flex items-center justify-between gap-3">
                   <span className="max-w-[55%] truncate rounded-full bg-paper/90 px-3 py-1.5 text-[13px] font-medium text-ink ring-1 ring-mist backdrop-blur">
-                    {many ? `${items.length} món · đang chọn: ${selected.name}` : firstFile?.file.name}
+                    {many ? `${items.length} món · đang chọn: ${selected.name}` : files[0]?.file.name}
                   </span>
                   {many ? (
                     <span className="flex gap-2">
@@ -397,16 +395,14 @@ export function Quote3DCalculator({ loadColors = fetchColors }: { loadColors?: (
           pending={pending}
           onSubmit={() => (sent ? startNewOrder(true) : setShowOrder(true))}
         />
-        {/* Gửi đơn: tạm thời gửi món / file đầu tiên (gửi nhiều file ở bước sau) */}
-        {showOrder && first && firstFile && quote && (
+        {showOrder && quote && (
           <OrderForm
             key={formKey}
             quote={quote}
-            stats={first.stats}
-            settings={{ ...shared, ...first.settings }}
-            file={firstFile.file}
-            fileBuffer={firstFile.buffer}
-            scale={first.scale}
+            files={files}
+            items={items}
+            shared={shared}
+            arrangement={arrangement}
             orderCode={orderCode}
             color={selectedColor}
             onClose={() => setShowOrder(false)}

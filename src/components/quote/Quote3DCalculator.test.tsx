@@ -12,6 +12,7 @@ vi.mock('../../lib/stlWorkerClient', () => ({
   prepareInWorker: h.prepare,
   orientInWorker: h.orient,
   arrangeInWorker: h.arrange,
+  buildPlateInWorker: vi.fn(async () => new Uint8Array(4)),
 }))
 vi.mock('../../lib/submitOrder', async (orig) => ({
   ...(await orig<typeof import('../../lib/submitOrder')>()),
